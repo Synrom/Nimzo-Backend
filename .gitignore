@@ -1,0 +1,6 @@
+data
+dist-newstyle
+*~
+.vscode
+.env
+*.swp

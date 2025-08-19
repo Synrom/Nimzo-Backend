@@ -1,0 +1,130 @@
+cabal-version:      3.0
+name:               Gambit
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Synrom
+maintainer:         max.leiwig@gmail.com
+-- copyright:
+category:           Web
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+-- extra-source-files:
+
+common warnings
+    ghc-options: -Wall
+
+library
+  hs-source-dirs: src
+  exposed-modules:
+      Models.User, 
+      Models.Card, 
+      Models.Deck, 
+      Models.UserCardView,
+      Models.UserDeckView,
+      App.Error,
+      App.Mail,
+      App.Env,
+      App.AppM,
+      App.API,
+      App.Auth,
+      App.Server,
+      App.Config,
+      Repo.Classes,
+      Repo.Deck,
+      Repo.User,
+      Repo.Utils,
+      Repo.Card,
+      Routes.Card,
+      Routes.Deck,
+      Routes.Auth,
+  build-depends: base >=4.14 && <5,
+                    servant, 
+                    servant-server,
+                    servant-auth,
+                    servant-auth-server,
+                    safe,
+                    warp,
+                    wai-logger,
+                    wai,
+                    case-insensitive,
+                    smtp-mail==0.3.0.0,
+                    mime-mail,
+                    http-types,
+                    password,
+                    utf8-string,
+                    mtl,
+                    aeson,
+                    attoparsec,
+                    bytestring,
+                    http-media,
+                    directory,
+                    random,
+                    text, 
+                    time, 
+                    dotenv,
+                    base,
+                    postgresql-simple
+  default-language: Haskell2010
+
+executable App
+    import:           warnings
+    main-is:          Main.hs
+    -- other-modules:
+    -- other-extensions:
+    build-depends:    servant, 
+                      servant-server,
+                      servant-auth,
+                      servant-auth-server,
+                      safe,
+                      warp,
+                      wai-logger,
+                      wai,
+                      case-insensitive,
+                      smtp-mail==0.3.0.0,
+                      mime-mail,
+                      password,
+                      utf8-string,
+                      mtl,
+                      aeson,
+                      attoparsec,
+                      bytestring,
+                      http-media,
+                      directory,
+                      random,
+                      text, 
+                      time, 
+                      dotenv,
+                      base,
+                      postgresql-simple,
+                      Gambit
+    hs-source-dirs:   app
+    default-language: Haskell2010
+
+test-suite Tests
+    type: exitcode-stdio-1.0
+    main-is:    Spec.hs
+    hs-source-dirs:
+      test
+    build-depends:  servant,
+                    Gambit,
+                    base,
+                    hspec,
+                    hspec-expectations,
+                    warp,
+                    wai,
+                    wai-extra,
+                    servant,
+                    servant-server,
+                    servant-client,
+                    http-client,
+                    http-client-tls,
+                    aeson,
+                    bytestring,
+                    text,
+                    sqlite-simple,
+                    exceptions,
+                    mtl,
+                    time
