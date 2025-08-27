@@ -3,6 +3,9 @@ module App.Config where
 import qualified Data.Text as T
 import Configuration.Dotenv (load, parseFile)
 import qualified System.Environment as Env
+import Servant.Auth.Server (fromSecret, JWTSettings, defaultJWTSettings)
+import Data.ByteString.Char8 (pack)
+
 import Database.PostgreSQL.Simple
   ( ConnectInfo
       ( connectDatabase,
@@ -40,3 +43,10 @@ loadMailConfig = do
   mail_ <- T.pack <$> Env.getEnv "MAIL"
   link <- Env.getEnv "VERIFICATION_LINK"
   return $ Google user_name pwd name_ mail_ link
+
+loadJWT :: IO JWTSettings
+loadJWT = do
+  values <- parseFile ".env"
+  load False values
+  secret <- Env.getEnv "JWT_SECRET"
+  pure $ defaultJWTSettings $ fromSecret $ pack secret

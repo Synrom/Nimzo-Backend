@@ -14,7 +14,7 @@
 
 module Routes.Card where
 
-import Servant (type (:<|>) (..), ServerError(..), err404, err401, ReqBody, Post, JSON, type (:>), Capture, Patch)
+import Servant (type (:<|>) (..), ServerError(..), err404, err401, ReqBody, Post, JSON, type (:>), Capture, Patch, Get)
 import Servant.Auth.Server (AuthResult(..), throwAll)
 import Control.Monad.Reader
 import Control.Monad.Except
@@ -29,12 +29,14 @@ import Repo.Deck (authorsDeck)
 import Repo.Utils
 
 type API = 
-  "deck" :> Capture "id" Integer :> "card" :> ReqBody '[JSON] Card :> Post '[JSON] Card
+  "deck" :> Capture "id" Integer :> "card" :> Get '[JSON] [Card]
+  :<|> "deck" :> Capture "id" Integer :> "card" :> ReqBody '[JSON] Card :> Post '[JSON] Card
   :<|> "deck" :> Capture "id" Integer :> "card" :> ReqBody '[JSON] Card :> Patch '[JSON] Card
   
 
 type Server = 
-  (Integer -> Card -> AppM Card)
+  (Integer -> AppM [Card])
+  :<|> (Integer -> Card -> AppM Card)
   :<|> (Integer -> Card -> AppM Card)
 
 associate :: Integer -> Card -> Card
@@ -53,6 +55,7 @@ prepare route user deckid card = ensureOwnership user deckid route (associate de
 
 server :: AuthResult AuthenticatedUser -> Server
 server (Authenticated user) = 
-  prepare Repo.Card.insert user
+  Repo.Card.find
+  :<|> prepare Repo.Card.insert user
   :<|> prepare Repo.Card.update user
 server _ = throwAppError $ Unauthorized "No access."

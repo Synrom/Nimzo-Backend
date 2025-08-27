@@ -25,3 +25,20 @@ rightOrThrow e i = case i of
 
 ensure :: MonadError e m => e -> Bool -> m ()
 ensure e ok = unless ok (throwError e)
+
+notNull :: Foldable t => t a -> Bool
+notNull = not . null
+
+flattenChangeset :: (c -> [a]) -> (c -> [a]) -> c -> [a]
+flattenChangeset getCreated getUpdated c = getCreated c ++ getUpdated c
+
+orM :: Monad m => [m Bool] -> m Bool
+orM as = or <$> sequence as
+
+neitherM :: Monad m => [m Bool] -> m Bool
+neitherM as = not <$> orM as
+
+ensureM :: (Monad m, MonadError e m) => e -> m Bool -> m ()
+ensureM err mcond = do
+  ok <- mcond
+  if ok then pure () else throwError err

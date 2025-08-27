@@ -36,12 +36,12 @@ import App.Error (AppError(..))
 type API = 
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] User :> Post '[JSON] NewUser
-    :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokens :> Post '[JSON] AuthTokens
+    :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokenRequest :> Post '[JSON] AuthTokens
 
 type Server = 
   (AuthRequest -> AppM NewUser)
   :<|> (User -> AppM NewUser)
-  :<|> (AuthTokens -> AppM AuthTokens)
+  :<|> (AuthTokenRequest -> AppM AuthTokens)
 
 unauthorized :: AppError
 unauthorized = Unauthorized "Username/Email or password is wrong."
@@ -65,8 +65,8 @@ authCheck (AuthRequest uname pwd) = do
   tokens <- createTokens user
   pure $ newUser tokens user
 
-refreshToken :: AuthTokens -> AppM AuthTokens
-refreshToken (AuthTokens _ reftoken _ ) = do
+refreshToken :: AuthTokenRequest -> AppM AuthTokens
+refreshToken (AuthTokenRequest reftoken) = do
   jwtCfg <- askJwtCfg
   rt:: RefreshTokenContent <- liftIO (verifyJWT jwtCfg (C.pack reftoken)) >>= orThrow invalidToken
   tokenExpires <- addUTCTime (secondsToNominalDiffTime 1800) <$> liftIO getCurrentTime

@@ -11,9 +11,14 @@ data UserDeckView = UserDeckView
   { numCardsToday :: Integer,
     cardsPerDay :: Integer,
     numCardsLearnt :: Integer,
+    isAuthor :: Bool,
     userId :: String,
     deckId :: Integer,
-    udvId :: Integer
+    udvId :: String,
+    name :: String,
+    isPublic :: Bool,
+    description :: String,
+    numCardsTotal :: Integer
   }
   deriving (Eq, Show, Generic)
 

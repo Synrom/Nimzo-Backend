@@ -32,27 +32,31 @@ CREATE TABLE cards (
 );
 
 CREATE TABLE user_deck_views (
-  id SERIAL PRIMARY KEY,
+  id VARCHAR(250) PRIMARY KEY,
   user_id VARCHAR(250) NOT NULL REFERENCES users(username),
   deck_id INTEGER NOT NULL REFERENCES decks(id),
   num_cards_today INTEGER NOT NULL DEFAULT 0,
   is_author BOOLEAN DEFAULT FALSE,
   cards_per_day INTEGER NOT NULL DEFAULT 20,
   num_cards_learnt INTEGER NOT NULL DEFAULT 0,
+  name VARCHAR(250) NOT NULL,
+  is_public BOOLEAN NOT NULL,
+  description VARCHAR(500),
+  num_cards_total INTEGER NOT NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE user_card_views (
-  id SERIAL PRIMARY KEY,
+  id VARCHAR(250) PRIMARY KEY,
   user_id VARCHAR(250) NOT NULL REFERENCES users(username),
   card_id INTEGER NOT NULL REFERENCES cards(id),
-  user_deck_id INTEGER NOT NULL REFERENCES user_deck_views(id),
+  user_deck_id VARCHAR(250) NOT NULL REFERENCES user_deck_views(id),
   num_correct_trials INTEGER NOT NULL DEFAULT 0,
   next_request TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  moves VARCHAR(500) NOT NULL,
+  title VARCHAR(250) NOT NULL,
+  color VARCHAR(2) NOT NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-
-ALTER TABLE user_card_views
-  ADD CONSTRAINT user_card_views_unique UNIQUE (user_id, card_id);

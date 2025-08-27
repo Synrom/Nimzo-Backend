@@ -18,7 +18,7 @@ import Data.CaseInsensitive  (mk)
 import Control.Monad.Except
 import GHC.Generics
 
-data AppError = NotFound String | Unauthorized String | Internal String | AlreadyExists String 
+data AppError = NotFound String | Unauthorized String | Internal String | AlreadyExists String | MergeConflict String
   deriving (Generic, Show)
 
 class ThrowAppError a where
@@ -51,6 +51,7 @@ toServerError = \case
   Unauthorized m -> jsonize err401 m
   Internal m -> jsonize err500 m
   AlreadyExists m -> jsonize err404 m
+  MergeConflict m -> jsonize err404 m
 
 parsingError :: SqlError -> AppError
 parsingError sqlerror = Internal $ show sqlerror

@@ -14,19 +14,12 @@ returnFields :: Query
 returnFields = " color, moves, title, deck_id, id "
 
 insert :: MonadDB m => Card -> m Card
-insert card = do
-    result :: Card <- one =<< runQuery 
+insert card = one =<< runQuery 
       ("INSERT INTO cards (deck_id, moves, title, color) VALUES (?, ?, ?, ?) RETURNING" <> returnFields)
       (card.deckId, card.moves, card.title, card.color)
-    _ <- execute
-      "INSERT INTO user_card_views (user_id, card_id, user_deck_id) \
-      \ SELECT udv.user_id, c.id, udv.id \
-      \ FROM user_deck_views AS udv \
-      \ JOIN cards AS c ON c.deck_id = udv.deck_id \
-      \ WHERE c.id = ?\
-      \ ON CONFLICT DO NOTHING"
-      (Only result.cardId)
-    return result
+  
+find :: MonadDB m => Integer -> m [Card]
+find = runQuery ("SELECT" <> returnFields <> "FROM cards WHERE deck_id = ?") . Only
 
 update :: MonadDB m => Card -> m Card
 update card = one =<< runQuery query (card.moves, card.title, card.color, card.cardId)

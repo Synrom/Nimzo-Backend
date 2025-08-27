@@ -8,7 +8,7 @@ import Database.PostgreSQL.Simple (Only(..), Query)
 import Data.String (fromString)
 import Control.Monad
 import Repo.Classes
-import Repo.Utils (one)
+import Repo.Utils (one, notNull)
 import Models.Deck (Deck(..))
 import Models.User (User(..))
 
@@ -58,7 +58,7 @@ find deckId = one =<< runQuery
 authorsDeck :: MonadDB m => String -> Integer -> m Bool
 authorsDeck username deckid = do
   decks :: [Deck] <- runQuery query (username, deckid)
-  return $ not $ null decks
+  return (notNull decks)
   where
     query :: Query
     query = "SELECT " <> returnFields <> "FROM decks WHERE author = ? AND id = ?"

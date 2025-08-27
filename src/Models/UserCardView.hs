@@ -13,7 +13,11 @@ data UserCardView = UserCardView
     nextRequest :: UTCTime,
     cardId :: Integer,
     userId :: String,
-    ucvId :: Integer
+    userDeckId :: Integer,
+    ucvId :: String,
+    moves :: String,
+    title :: String,
+    color :: String
   }
   deriving (Eq, Show, Generic)
 

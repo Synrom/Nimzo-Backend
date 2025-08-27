@@ -50,6 +50,9 @@ instance FromJWT  RefreshTokenContent
 data AuthRequest = AuthRequest { username :: String, password :: String } deriving (Eq, Show, Generic)
 instance FromJSON AuthRequest
 
+newtype AuthTokenRequest = AuthTokenRequest { refresh_token :: String } deriving (Eq, Show, Generic)
+instance FromJSON AuthTokenRequest
+
 data AuthTokens = AuthTokens { access_token :: String, refresh_token :: String, expires :: UTCTime } deriving (Eq, Show, Generic)
 instance ToJSON AuthTokens
 instance FromJSON AuthTokens

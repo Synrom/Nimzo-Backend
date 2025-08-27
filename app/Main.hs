@@ -18,9 +18,8 @@ main = do
   mailconfig <- loadMailConfig
   dbUrl <- loadDbUrl
   conn <-connectPostgreSQL $ pack dbUrl
-  jwtKey <- generateKey
-  let jwtCfg = defaultJWTSettings jwtKey
-      cookie = defaultCookieSettings
+  jwtCfg <- loadJWT
+  let cookie = defaultCookieSettings
       env    = Env { dbConn = conn, jwtSettings = jwtCfg, mailConfig = mailconfig }
       ctx    = jwtCfg :. cookie :. EmptyContext
   withStdoutLogger $ \logger -> do
