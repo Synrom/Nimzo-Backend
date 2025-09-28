@@ -8,24 +8,36 @@ import Database.PostgreSQL.Simple (Only(..), Query)
 import Data.String (fromString)
 import Control.Monad
 import Repo.Classes
-import Repo.Utils (one, notNull)
+import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast)
 import Models.Deck (Deck(..))
 import Models.User (User(..))
+import Models.UserDeckView (UserDeckView(..))
+import Models.Card (CardQuery(..), Card(..), PagedCards (..), PendingCard (..))
+import Database.PostgreSQL.Simple.ToField (ToField(toField))
 
 returnFields :: Query
-returnFields = " id, name, is_public, description, num_cards_total, author "
+returnFields = " id, name, is_public, description, num_cards_total, author, user_deck_id "
 
-insert :: MonadDB m => Deck -> m Deck
-insert deck = let
+insertOrUpdate :: MonadDB m => Deck -> m Deck
+insertOrUpdate deck = let
   query :: Query
   query = 
     "INSERT INTO decks (name, is_public, description, \
-    \num_cards_total, author) VALUES (?, ?, ?, ?, ?) RETURNING" 
+    \num_cards_total, author, user_deck_id) VALUES (?, ?, ?, ?, ?, ?) \
+    \ON CONFLICT (user_deck_id) \
+    \DO UPDATE SET \
+    \ name = EXCLUDED.name \
+    \, is_public = EXCLUDED.is_public \
+    \, description = EXCLUDED.description \
+    \, author = EXCLUDED.author \
+    \, num_cards_total = EXCLUDED.num_cards_total \
+    \, last_modified = CURRENT_TIMESTAMP \
+    \RETURNING" 
     <> returnFields
   in
     one =<< runQuery 
       query 
-      (deck.name, deck.isPublic, deck.description, deck.numCardsTotal, deck.author)
+      (deck.name, deck.isPublic, deck.description, deck.numCardsTotal, deck.author, deck.user_deck_id)
 
 search :: MonadDB m => Maybe String -> m [Deck]
 search Nothing = return []
@@ -36,29 +48,41 @@ search (Just s) = runQuery query (Only s)
       "SELECT" <> returnFields <>
       "FROM decks WHERE name ILIKE '%' || ? || '%'" 
 
-update :: MonadDB m => Deck -> m Deck
-update deck = let
-  query :: Query
-  query = 
-    "UPDATE decks SET name = ?, is_public = ?, description = ?, num_cards_total = ?, last_modified = CURRENT_TIMESTAMP, \
-    \ author = ? WHERE id = ? RETURNING" <> returnFields
-  in 
-    one =<< runQuery
-      query
-      (deck.name, deck.isPublic, deck.description, deck.numCardsTotal, deck.author, deck.deckId)
-
 find :: MonadDB m => Integer -> m Deck
 find deckId = one =<< runQuery
   query
   (Only deckId)
   where
     query :: Query
-    query = "SELECT" <> returnFields <> "WHERE id = ?"
+    query = "SELECT" <> returnFields <> "FROM decks WHERE id = ?"
 
-authorsDeck :: MonadDB m => String -> Integer -> m Bool
-authorsDeck username deckid = do
-  decks :: [Deck] <- runQuery query (username, deckid)
+authorsDeck :: MonadDB m => String -> Deck -> m Bool
+authorsDeck username deck = do
+  decks :: [Deck] <- runQuery query (username, deck.user_deck_id)
   return (notNull decks)
   where
     query :: Query
-    query = "SELECT " <> returnFields <> "FROM decks WHERE author = ? AND id = ?"
+    query = "SELECT " <> returnFields <> "FROM decks WHERE author = ? AND user_deck_id = ?"
+
+paginateCards :: [PendingCard] -> PagedCards
+paginateCards pendingCards = case safeLast pendingCards of
+  Nothing   -> PagedCards Nothing cards
+  Just card -> PagedCards (Just card.id) cards
+  where
+    unpend (PendingCard moves title color _) = Card moves title color
+    cards = map unpend pendingCards
+    
+
+listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
+listCardsOfDeck rawQuery = do
+  let cardQuery = rawQuery { limit = min 100 rawQuery.limit }
+  deck <- find cardQuery.deckId
+  let finalParams = [toField deck.user_deck_id] <> params <> [toField cardQuery.limit]
+  paginateCards <$> runQuery finalSql finalParams
+  where
+  fields = " moves, title, color, id "
+  baseSql = "SELECT" <> fields <> "FROM user_card_views WHERE user_deck_id=?"
+  (condition, params) = case rawQuery.cursor of
+    Nothing   -> ("", [])
+    Just next -> (" AND id > ?", [toField next])
+  finalSql = baseSql <> condition <> " ORDER BY id LIMIT ?"

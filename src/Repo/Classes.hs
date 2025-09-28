@@ -7,6 +7,7 @@
 module Repo.Classes where
 
 import Data.Int
+import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Exception
@@ -29,7 +30,7 @@ class MonadApp m => MonadDB m where
 runIOorThrow :: (MonadIO m, MonadError AppError m) => IO a -> m a
 runIOorThrow io = do
   r <- liftIO $ try @SqlError io
-  either (throwError . fromSqlError) pure r
+  either (liftIO . fromSqlError >=> throwError) pure r
 
 instance MonadDB AppM where
   askEnv = ask

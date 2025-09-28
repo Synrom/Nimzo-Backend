@@ -53,16 +53,32 @@ toServerError = \case
   AlreadyExists m -> jsonize err404 m
   MergeConflict m -> jsonize err404 m
 
-parsingError :: SqlError -> AppError
-parsingError sqlerror = Internal $ show sqlerror
+parsingError :: SqlError -> IO AppError
+parsingError sqlerror = do 
+  putStrLn "Failed parsing SqlError"
+  print sqlerror
+  return $ Internal $ show sqlerror
 
-fromSqlError :: SqlError -> AppError
-fromSqlError sqlerror = maybe error parse (constraintViolation sqlerror)
+parseConstraintViolation :: ConstraintViolation -> IO AppError
+parseConstraintViolation (NotNullViolation field) = do 
+  putStrLn $ "NotNullViolation on field " ++ toString field ++ "."
+  return $ Internal "All fields need to be set"
+parseConstraintViolation (ForeignKeyViolation table constraint) = do
+  putStrLn $ "ForeignKeyViolation in " ++ toString table ++ ":" ++ toString constraint
+  return $ NotFound "Referencing unknown instance."
+parseConstraintViolation (UniqueViolation violation) = do
+  putStrLn $ "UniqueViolation: " ++ toString violation
+  return $ AlreadyExists "Item already exists."
+parseConstraintViolation (CheckViolation table constraint) = do
+  putStrLn $ "CheckViolation: " ++ toString table ++ " " ++ toString constraint ++ "."
+  return $ Internal "Check Violation."
+parseConstraintViolation (ExclusionViolation name) = do
+  putStrLn $ "ExclusionViolation: " ++ toString name ++ "."
+  return $ Internal "Exclusion Violation: "
+
+
+fromSqlError :: SqlError -> IO AppError
+fromSqlError sqlerror = maybe error parseConstraintViolation (constraintViolation sqlerror)
   where
-    parse (NotNullViolation field) = Internal $ "NotNullViolation on field " ++ toString field ++ "."
-    parse (ForeignKeyViolation table _) = NotFound $ "Reference not found in " ++ toString table ++ "."
-    parse (UniqueViolation _) = AlreadyExists "Item already exists."
-    parse (CheckViolation table constraint) = Internal $ "CheckViolation: " ++ toString table ++ " " ++ toString constraint ++ "."
-    parse (ExclusionViolation name) = Internal $ "ExclusionViolation: " ++ toString name ++ "."
     error = parsingError sqlerror
     

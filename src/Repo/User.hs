@@ -13,10 +13,10 @@ import Repo.Classes
 import Models.Deck (Deck(..))
 import Repo.Utils (one)
 import App.Error (AppError(..))
-import Models.User (User(..))
+import Models.User (User(..), UserXP)
 
 returnFields :: String
-returnFields = " username, password, salt, premium, xp, email, verified "
+returnFields = " username, password, salt, premium, xp, rank, email, verified "
 
 insert :: MonadDB m => User -> m User
 insert user = one =<< runQuery query (user.username, user.password, user.salt, user.email)
@@ -30,3 +30,10 @@ find name = do
   where
     query :: Query
     query = fromString $ "SELECT" <> returnFields <> "FROM users WHERE username = ? OR email = ?"
+
+findUsername :: MonadDB m => String -> m (Maybe User)
+findUsername name = do
+  listToMaybe <$> runQuery query (Only name)
+  where
+    query :: Query
+    query = fromString $ "SELECT" <> returnFields <> "FROM users WHERE username = ?"

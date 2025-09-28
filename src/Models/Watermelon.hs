@@ -32,8 +32,8 @@ instance ToJSON a => ToJSON (TableChanges a)
 instance FromJSON a => FromJSON (TableChanges a)
 
 data Changes = Changes {
-  usercardview :: TableChanges UserCardView,
-  userdeckview :: TableChanges UserDeckView
+  user_card_views :: TableChanges UserCardView,
+  user_deck_views :: TableChanges UserDeckView
 } deriving (Eq, Show, Generic)
 
 instance ToJSON Changes
@@ -41,7 +41,7 @@ instance FromJSON Changes
 
 data ChangesResponse = ChangesResponse {
   changes :: Changes,
-  timestamp :: UTCTime
+  timestamp :: Integer
 } deriving (Eq, Show, Generic)
 
 instance ToJSON ChangesResponse
@@ -63,7 +63,7 @@ data Migration = Migration {
 instance FromJSON Migration
 
 data PullParams = PullParams {
-  lastPulledAt :: UTCTime,
+  lastPulledAt :: Maybe Integer,
   schemaVersion :: Integer,
   migration :: Maybe Migration
 } deriving (Eq, Show, Generic)
@@ -71,7 +71,7 @@ data PullParams = PullParams {
 instance FromJSON PullParams
 
 data PushParams = PushParams {
-  lastPulledAt :: UTCTime,
+  lastPulledAt :: Integer,
   changes :: Changes
 } deriving (Eq, Show, Generic)
 

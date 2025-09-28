@@ -13,7 +13,8 @@ data Deck = Deck
     isPublic :: Bool,
     description :: String,
     numCardsTotal :: Integer,
-    author :: String
+    author :: String,
+    user_deck_id :: String
   }
   deriving (Eq, Show, Generic)
 

@@ -51,16 +51,18 @@ import Servant.Server (Context ((:.)))
 import Servant.Auth (Auth, JWT)
 import Models.User (User(..))
 import Models.Deck (Deck(..))
-import Models.Card (Card(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.UserCardView (UserCardView(..))
 import App.Auth (AuthenticatedUser(..), AuthRequest(..), AuthTokens(..), NewUser(..))
 import qualified Routes.Deck as DeckRoutes
 import qualified Routes.Auth as AuthRoutes
-import qualified Routes.Card as CardRoutes
+import qualified Routes.Watermelon as Watermelon
+import qualified Routes.User as User
 
 type SecureAPI =
-  DeckRoutes.API :<|> CardRoutes.API
+  DeckRoutes.API 
+  :<|> Watermelon.API
+  :<|> User.API
 
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI

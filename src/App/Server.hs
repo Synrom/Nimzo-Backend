@@ -21,11 +21,14 @@ import App.AppM
 import App.Env
 import qualified Routes.Deck as DeckRoutes
 import qualified Routes.Auth as AuthRoutes
-import qualified Routes.Card as CardRoutes
+import qualified Routes.Watermelon as Watermelon
+import qualified Routes.User as User
 import App.Auth (AuthenticatedUser)
 
 secureServerT :: AuthResult AuthenticatedUser -> ServerT SecureAPI AppM
-secureServerT auth = DeckRoutes.server auth :<|> CardRoutes.server auth
+secureServerT auth = DeckRoutes.server auth 
+  :<|> Watermelon.server auth 
+  :<|> User.server auth 
 
 serverT :: ServerT API AppM
 serverT = secureServerT :<|> AuthRoutes.server

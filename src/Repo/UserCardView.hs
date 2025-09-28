@@ -5,52 +5,89 @@
 module Repo.UserCardView where
 
 import Data.Time (UTCTime)
+import Data.Maybe (fromMaybe)
 import Data.String (fromString)
 import Database.PostgreSQL.Simple (Query, Only(..))
 import Models.UserCardView (UserCardView(..))
 import Repo.Classes
-import Repo.Utils (notNull, one)
+import Repo.Utils (notNull, one, orMinTime, removePrefix)
 
 returnFields :: Query
-returnFields = " num_correct_trials, next_request, card_id, user_id, id, moves, title, color "
+returnFields = " num_correct_trials, next_request, user_id, user_deck_id, id, moves, title, color "
 
-updatedSince :: MonadDB m  => UTCTime -> m [UserCardView]
-updatedSince since = runQuery query (Only since)
+markString :: String -> String -> String
+markString username id = username ++ id
+
+mark :: UserCardView -> UserCardView
+mark ucv = ucv { 
+  ucvId = markString ucv.userId ucv.ucvId,
+  userDeckId = markString ucv.userId ucv.userDeckId 
+  }
+
+unmark :: UserCardView -> UserCardView
+unmark ucv = ucv { 
+  ucvId = removePrefix ucv.userId ucv.ucvId,
+  userDeckId = removePrefix ucv.userId ucv.userDeckId
+  }
+
+markAll :: [UserCardView] -> [UserCardView]
+markAll = map mark
+
+unmarkAll :: [UserCardView] -> [UserCardView]
+unmarkAll = map unmark
+
+updatedSince :: MonadDB m  => String -> Maybe UTCTime -> m [UserCardView]
+updatedSince username since = unmarkAll <$> runQuery query (orMinTime since, orMinTime since, username)
   where
     query :: Query
-    query = "SELECT" <> returnFields <> "FROM user_card_views WHERE last_modified > ?"
+    query = "SELECT" <> returnFields <> "FROM user_card_views WHERE last_modified > ? AND created_at < ? AND user_id = ?"
 
-createdSince :: MonadDB m  => UTCTime -> m [UserCardView]
-createdSince since = runQuery query (Only since)
+createdSince :: MonadDB m  => String -> Maybe UTCTime -> m [UserCardView]
+createdSince username since = unmarkAll <$> runQuery query (orMinTime since, username)
   where
     query :: Query
-    query = "SELECT" <> returnFields <> "FROM user_card_views WHERE created_at > ?"
+    query = "SELECT" <> returnFields <> "FROM user_card_views WHERE created_at > ? AND user_id = ?"
 
-modified :: MonadDB m => UTCTime -> [UserCardView] -> m Bool
-modified since cards = do
-  items :: [UserCardView] <- runQuery query (since, since)
+deletedSince :: MonadDB m => String -> Maybe UTCTime -> m [String]
+deletedSince username since = unmarkUsernameAll <$> runQuery query (orMinTime since, username)
+  where
+    query :: Query
+    query = "SELECT id FROM deleted_ucvs WHERE deleted_at > ? AND user_id = ?"
+    unmarkUsername = removePrefix username
+    unmarkUsernameAll = map unmarkUsername
+
+modified :: MonadDB m => String -> UTCTime -> [UserCardView] -> m Bool
+modified username since cards = do
+  items :: [UserCardView] <- runQuery query (since, since, username)
   return (notNull items)
   where
     query :: Query
-    query = "SELECT" <> returnFields <> "FROM user_card_views WHERE created_at > ? OR last_modified > ?"
+    query = "SELECT" <> returnFields <> "FROM user_card_views WHERE (created_at > ? OR last_modified > ?) AND user_id = ?"
 
-insertOrUpdate :: MonadDB m => UserCardView -> m UserCardView
-insertOrUpdate card = one =<< runQuery query (card.ucvId , card.cardId, card.userDeckId, card.numCorrectTrials, card.nextRequest, card.userId)
+insertOrUpdate :: MonadDB m => UTCTime -> UserCardView -> m UserCardView
+insertOrUpdate time unmarked = one =<< runQuery query (card.ucvId , card.userDeckId, card.numCorrectTrials, card.nextRequest, card.moves, card.title, card.color, card.userId, time, time)
   where
     query :: Query
     query = "INSERT INTO user_card_views \
-    \(id, card_id, user_deck_id, \
-    \num_correct_trials, next_request \
-    \ moves, title, color, user_id) \
-    \VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (id) \
+    \(id, user_deck_id, \
+    \num_correct_trials, next_request, \
+    \ moves, title, color, user_id, \
+    \ last_modified, created_at) \
+    \VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) \
     \DO UPDATE SET \
-    \card_id = EXCLUDED.card_id \
     \user_deck_id = EXCLUDED.user_deck_id \
-    \user_id = EXCLUDED.user_id \
-    \num_correct_trials = EXCLUDED.num_correct_trials \
-    \moves = EXCLUDED.moves \
-    \title = EXCLUDED.title \
-    \color = EXCLUDED.color \
-    \next_request = EXCLUDED.next_request \
-    \last_modified = CURRENT_TIMESTAMP \
+    \, user_id = EXCLUDED.user_id \
+    \, num_correct_trials = EXCLUDED.num_correct_trials \
+    \, moves = EXCLUDED.moves \
+    \, title = EXCLUDED.title \
+    \, color = EXCLUDED.color \
+    \, next_request = EXCLUDED.next_request \
+    \, last_modified = EXCLUDED.last_modified \
     \RETURNING" <> returnFields
+    card = mark unmarked
+
+delete :: MonadDB m => String -> String -> m ()
+delete username id = do 
+  execute "DELETE FROM user_card_views WHERE id = ?" (Only $ markString username id)
+  execute "INSERT INTO deleted_ucvs (id, user_id) VALUES (?, ?)" (id, username)
+  return ()

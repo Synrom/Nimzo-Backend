@@ -26,18 +26,17 @@ import App.Auth (AuthenticatedUser(..))
 import Models.Deck (Deck(..))
 import Models.User (User(..))
 import Repo.Deck
+import Models.Card (Card, CardQuery, PagedCards)
 
 type API = 
-  "deck" :> ReqBody '[JSON] Deck :> Post '[JSON] Deck
-  :<|> "deck" :> "search" :> QueryParam "query" String :> Get '[JSON] [Deck]
-  :<|> "deck" :> Capture "id" Integer :> ReqBody '[JSON] Deck :> Patch '[JSON] Deck
+  "deck" :> "search" :> QueryParam "query" String :> Get '[JSON] [Deck]
   :<|> "deck" :> Capture "id" Integer :> Get '[JSON] Deck
+  :<|> "deck" :> "cards" :> ReqBody '[JSON] CardQuery :> Post '[JSON] PagedCards
 
 type Server = 
-  (Deck -> AppM Deck)
-  :<|> (Maybe String -> AppM [Deck])
-  :<|> (Integer -> Deck -> AppM Deck)
+  (Maybe String -> AppM [Deck])
   :<|> (Integer -> AppM Deck)
+  :<|> (CardQuery -> AppM PagedCards)
 
 own :: AuthenticatedUser -> Deck -> Deck
 own user deck = deck {author = user.username}
@@ -47,8 +46,7 @@ setId id deck = deck { deckId = id }
 
 server :: AuthResult AuthenticatedUser -> Server
 server (Authenticated user) = 
-  Repo.Deck.insert . own user
-  :<|> Repo.Deck.search
-  :<|> (Repo.Deck.update.) . (own user.) . setId 
+  Repo.Deck.search
   :<|> Repo.Deck.find
+  :<|> Repo.Deck.listCardsOfDeck 
 server _ = throwAppError $ Unauthorized "No access."
