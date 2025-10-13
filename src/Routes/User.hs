@@ -39,8 +39,8 @@ type Server =
   :<|> AppM PublicUser
 
 toPublic :: User -> PublicUser
-toPublic (User username password salt premium xp rank email verified) =
-  PublicUser username premium xp rank email verified
+toPublic (User username password salt premium xp streak last_activity rank email verified) =
+  PublicUser username premium xp streak rank email verified
 
 getUserRoute :: String -> AppM User
 getUserRoute username = findUsername username >>= orThrow userNotFound 

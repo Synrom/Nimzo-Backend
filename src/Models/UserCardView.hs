@@ -8,7 +8,7 @@ module Models.UserCardView where
 
 import Data.Aeson (FromJSON (..), ToJSON (..), Options(..), defaultOptions, genericToJSON, genericToEncoding, genericParseJSON)
 import GHC.Generics
-import Database.PostgreSQL.Simple (FromRow)
+import Database.PostgreSQL.Simple (FromRow, ToRow)
 import Data.Time (UTCTime)
 
 data UserCardView = UserCardView
@@ -34,6 +34,10 @@ jsonOpts = defaultOptions
       other              -> other
   }
 
+newtype NumCorrectTrials = NumCorrectTrials
+  { numCorrectTrials :: Integer }
+  deriving (Eq, Show, Generic)
+
 instance ToJSON   UserCardView where
   toJSON     = genericToJSON jsonOpts
   toEncoding = genericToEncoding jsonOpts
@@ -42,3 +46,4 @@ instance FromJSON UserCardView where
   parseJSON  = genericParseJSON jsonOpts
 
 instance FromRow UserCardView
+instance FromRow NumCorrectTrials

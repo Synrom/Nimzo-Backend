@@ -7,6 +7,7 @@ module Models.User where
 import qualified Data.Text as T
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import GHC.Generics
+import Data.Time (UTCTime)
 
 import Database.PostgreSQL.Simple (ToRow, FromRow, Connection, Query, query)
 
@@ -16,6 +17,8 @@ data User = User
     salt :: T.Text,
     premium :: Bool,
     xp :: Integer,
+    streak :: Integer,
+    last_activity :: UTCTime, 
     rank :: Integer,
     email :: String,
     verified :: Bool
@@ -26,6 +29,7 @@ data PublicUser = PublicUser
   { username :: String,
     premium :: Bool,
     xp :: Integer,
+    streak :: Integer,
     rank :: Integer,
     email :: String,
     verified :: Bool
@@ -38,6 +42,7 @@ data UserXP = UserXP
     rank :: Integer
   }
   deriving (Eq, Show, Generic)
+
 
 instance ToJSON User
 instance FromJSON User

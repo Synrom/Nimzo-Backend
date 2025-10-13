@@ -56,13 +56,13 @@ find deckId = one =<< runQuery
     query :: Query
     query = "SELECT" <> returnFields <> "FROM decks WHERE id = ?"
 
-authorsDeck :: MonadDB m => String -> Deck -> m Bool
-authorsDeck username deck = do
-  decks :: [Deck] <- runQuery query (username, deck.user_deck_id)
+alreadyExists :: MonadDB m => Deck -> m Bool
+alreadyExists deck = do
+  decks :: [Deck] <- runQuery query (Only $ "%" ++ removePrefix deck.author deck.user_deck_id)
   return (notNull decks)
   where
     query :: Query
-    query = "SELECT " <> returnFields <> "FROM decks WHERE author = ? AND user_deck_id = ?"
+    query = "SELECT" <> returnFields <> "FROM decks WHERE user_deck_id LIKE ?"
 
 paginateCards :: [PendingCard] -> PagedCards
 paginateCards pendingCards = case safeLast pendingCards of

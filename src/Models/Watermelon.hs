@@ -77,7 +77,9 @@ data PushParams = PushParams {
 
 instance FromJSON PushParams
 
-newtype Success = Success {
+data Success = Success {
+  xp :: Integer,
+  streak :: Integer,
   msg :: String
 } deriving (Eq, Show, Generic)
 

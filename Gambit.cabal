@@ -37,6 +37,7 @@ library
       Repo.Classes,
       Repo.Deck,
       Repo.User,
+      Repo.Xp,
       Repo.Utils,
       Repo.Rank,
       Repo.UserCardView,

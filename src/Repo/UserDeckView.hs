@@ -95,6 +95,9 @@ delete username id = do
   execute "INSERT INTO deleted_udvs (id, user_id) VALUES (?, ?)" (id, username)
   return ()
 
+authored :: UserDeckView -> Bool
+authored view = view.isAuthor
+
 userDeckToDeck :: UserDeckView -> Deck
 userDeckToDeck unmarked  = Deck 0 name isPublic description numCardsTotal userId udvId
   where

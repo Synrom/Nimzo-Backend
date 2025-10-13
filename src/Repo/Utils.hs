@@ -9,6 +9,7 @@ import Control.Monad.Except
 import Control.Conditional ((<|))
 import App.Error
 import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.List (stripPrefix)
 
 notFound :: AppError
@@ -18,6 +19,9 @@ one :: MonadError AppError m => [a] -> m a
 one = \case
   [x] -> return x
   _   -> throwError notFound
+
+arrayLength :: [a] -> Integer
+arrayLength xs = toInteger (length xs)
 
 removePrefix :: String -> String -> String
 removePrefix prefix str = fromMaybe str (stripPrefix prefix str)
@@ -54,7 +58,22 @@ orMinTime t = minTime <| t
 neitherM :: Monad m => [m Bool] -> m Bool
 neitherM as = not <$> orM as
 
+neither :: [Bool] -> Bool
+neither = not . or
+
 ensureM :: (Monad m, MonadError e m) => e -> m Bool -> m ()
 ensureM err mcond = do
   ok <- mcond
   if ok then pure () else throwError err
+
+isNextDay :: UTCTime -> UTCTime -> Bool
+isNextDay t1 t2 = abs (diffDays (utctDay t2) (utctDay t1)) == 1
+
+twoOrMoreDaysPassed :: UTCTime -> UTCTime -> Bool
+twoOrMoreDaysPassed t1 t2 = abs (diffDays (utctDay t2) (utctDay t1)) >= 2
+
+getUTCNow :: IO Integer
+getUTCNow = do
+  posixTime <- getPOSIXTime
+  let ms = round (posixTime * 1000) :: Integer
+  return ms
