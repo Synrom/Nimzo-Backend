@@ -10,7 +10,7 @@ module Models.Watermelon where
 import GHC.Generics
 import Data.Text
 import Data.Aeson (ToJSON, FromJSON)
-import Database.PostgreSQL.Simple (Connection, SqlError)
+import Database.PostgreSQL.Simple (Connection, SqlError, FromRow)
 import Data.Proxy
 import Data.Int (Int64)
 import Control.Monad (filterM)
@@ -82,5 +82,11 @@ data Success = Success {
   streak :: Integer,
   msg :: String
 } deriving (Eq, Show, Generic)
+
+newtype DatabaseTime = DatabaseTime {
+  time :: UTCTime
+} deriving (Eq, Show, Generic)
+
+instance FromRow DatabaseTime
 
 instance ToJSON Success

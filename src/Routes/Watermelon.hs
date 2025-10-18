@@ -127,8 +127,8 @@ pushRoute user PushParams {lastPulledAt, changes} = do
   User {xp, streak} <- updateUser changes.user_card_views.updated user.username
   mapM_ (UserDeckView.insertOrUpdate since) udvitems
   mapM_ (UserCardView.insertOrUpdate since) ucvitems
-  mapM_ (UserDeckView.delete user.username) changes.user_deck_views.deleted
-  mapM_ (UserCardView.delete user.username) changes.user_card_views.deleted
+  mapM_ (UserCardView.delete user.username since) changes.user_card_views.deleted
+  mapM_ (UserDeckView.delete user.username since) changes.user_deck_views.deleted
   -- TODO: do these as a background task
   mapM_ (Deck.insertOrUpdate . UserDeckView.userDeckToDeck) $ filter UserDeckView.authored udvitems
   pure $ Success xp streak "Synched successfully."

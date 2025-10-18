@@ -4,15 +4,17 @@
 
 module Repo.UserDeckView where
 
-import Data.Time (UTCTime)
+import Data.Time (UTCTime, getCurrentTime)
 import Data.String (fromString)
 import Data.Maybe (fromMaybe)
 import Data.List (stripPrefix)
 import Database.PostgreSQL.Simple (Query, Only(..))
 import Models.UserDeckView (UserDeckView(..))
+import Models.Watermelon (DatabaseTime(..))
 import Models.Deck (Deck(..))
 import Repo.Utils (notNull, one, orMinTime, removePrefix)
 import Repo.Classes
+import Control.Monad.IO.Class (MonadIO(liftIO))
 
 returnFields :: Query
 returnFields = " num_cards_today, cards_per_day, num_cards_learnt, is_author, user_id, id, name, is_public, description, num_cards_total "
@@ -45,12 +47,14 @@ createdSince username since = unmarkAll <$> runQuery query (orMinTime since, use
     query = "SELECT" <> returnFields <> "FROM user_deck_views WHERE created_at > ? AND user_id = ?"
 
 deletedSince :: MonadDB m => String -> Maybe UTCTime -> m [String]
-deletedSince username since = unmarkUsernameAll <$> runQuery query (orMinTime since, username)
+deletedSince username since = unmarkUsernameAll <$> do
+    now <- liftIO getCurrentTime
+    runQuery query (orMinTime since, fromMaybe now since, username)
   where
     query :: Query
-    query = "SELECT id FROM deleted_udvs WHERE deleted_at > ? AND user_id = ?"
+    query = "SELECT id FROM deleted_udvs WHERE deleted_at > ? AND created_at <= ? AND user_id = ?"
     unmarkUsername = removePrefix username
-    unmarkUsernameAll = map unmarkUsername
+    unmarkUsernameAll = map (unmarkUsername . fromOnly)
 
 modified :: MonadDB m => String -> UTCTime -> [UserDeckView] -> m Bool
 modified username since cards = do
@@ -89,10 +93,11 @@ insertOrUpdate time unmarked = one =<< runQuery query
     \RETURNING" <> returnFields
     deck = mark unmarked
 
-delete :: MonadDB m => String -> String -> m ()
-delete username id = do 
-  execute "DELETE FROM user_deck_views WHERE id = ?" (Only $ markString username id)
-  execute "INSERT INTO deleted_udvs (id, user_id) VALUES (?, ?)" (id, username)
+delete :: MonadDB m => String -> UTCTime -> String -> m ()
+delete username deletedAt id = do 
+  execute "DELETE FROM decks WHERE user_deck_id = ?" (Only $ markString username id)
+  DatabaseTime createdAt  <- one =<< runQuery "DELETE FROM user_deck_views WHERE id = ? RETURNING created_at" (Only $ markString username id)
+  execute "INSERT INTO deleted_udvs (id, user_id, created_at, deleted_at) VALUES (?, ?, ?, ?)" (markString username id, username, createdAt, deletedAt)
   return ()
 
 authored :: UserDeckView -> Bool

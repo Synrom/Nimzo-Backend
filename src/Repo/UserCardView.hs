@@ -4,13 +4,15 @@
 
 module Repo.UserCardView where
 
-import Data.Time (UTCTime)
+import Data.Time (UTCTime (..), getCurrentTime)
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.String (fromString)
 import Database.PostgreSQL.Simple (Query, Only(..))
 import Models.UserCardView (UserCardView(..), NumCorrectTrials (..))
+import Models.Watermelon (DatabaseTime(..))
 import Repo.Classes
 import Repo.Utils (notNull, one, orMinTime, removePrefix)
+import Control.Monad.IO.Class (MonadIO(liftIO))
 
 returnFields :: Query
 returnFields = " num_correct_trials, next_request, user_id, user_deck_id, id, moves, title, color "
@@ -49,12 +51,14 @@ createdSince username since = unmarkAll <$> runQuery query (orMinTime since, use
     query = "SELECT" <> returnFields <> "FROM user_card_views WHERE created_at > ? AND user_id = ?"
 
 deletedSince :: MonadDB m => String -> Maybe UTCTime -> m [String]
-deletedSince username since = unmarkUsernameAll <$> runQuery query (orMinTime since, username)
+deletedSince username since = unmarkUsernameAll <$> do
+    now <- liftIO getCurrentTime
+    runQuery query (orMinTime since, fromMaybe now since , username)
   where
     query :: Query
-    query = "SELECT id FROM deleted_ucvs WHERE deleted_at > ? AND user_id = ?"
+    query = "SELECT id FROM deleted_ucvs WHERE deleted_at > ? AND created_at <= ? AND user_id = ?"
     unmarkUsername = removePrefix username
-    unmarkUsernameAll = map unmarkUsername
+    unmarkUsernameAll = map (unmarkUsername . fromOnly)
 
 modified :: MonadDB m => String -> UTCTime -> [UserCardView] -> m Bool
 modified username since cards = do
@@ -120,8 +124,8 @@ infeasibleUpdated now unmarked = do
 infeasibleCreated :: Integer -> Integer -> UserCardView -> Bool
 infeasibleCreated now lastPulledAt card = not $ isFeasible now lastPulledAt card.nextRequest card.numCorrectTrials
 
-delete :: MonadDB m => String -> String -> m ()
-delete username id = do 
-  execute "DELETE FROM user_card_views WHERE id = ?" (Only $ markString username id)
-  execute "INSERT INTO deleted_ucvs (id, user_id) VALUES (?, ?)" (id, username)
+delete :: MonadDB m => String -> UTCTime -> String -> m ()
+delete username deleteAt id = do 
+  DatabaseTime createdAt  <- one =<< runQuery "DELETE FROM user_card_views WHERE id = ? RETURNING created_at" (Only $ markString username id)
+  execute "INSERT INTO deleted_ucvs (id, user_id, created_at, deleted_at) VALUES (?, ?, ?, ?)" (markString username id, username, createdAt, deleteAt)
   return ()
