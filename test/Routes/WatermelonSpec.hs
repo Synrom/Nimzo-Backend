@@ -315,6 +315,37 @@ spec = describe "Routes.Watermelon" $ do
           Internal msg -> msg `shouldBe` "{\"msg\":\"Modified objects after last pull.\"}"
           _ -> expectationFailure "Test Env should throw everything as internal"
 
+
+  it "correct feasibility checks" $ do
+    withCleanDb $ \conn -> do
+      let user = mkTestUser "user" "conflict@example.com" "password"
+      _ <- runTestApp conn $ Repo.User.insert user
+
+      let deckCreatedAt   = 1760884622
+      let cardCreatedAt   = 1760884630
+      let lastPulledAt    = 1760884651
+      let now             = 1760884651761
+      let origNextRequest = 1760884630525
+      let nextRequest     = 1760885551609
+
+      -- create Deck
+      let deck = mkTestUserDeckView "deck" "user" "Deck"
+      _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate (intToTime deckCreatedAt) deck
+
+      -- add Card and updateDeck
+      let card = (mkTestUserCardView "cardId" "user" "deck" "e4 e5") {nextRequest = origNextRequest}
+      _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate (intToTime cardCreatedAt) card
+      let updateDeck = deck {numCardsTotal = 1}
+      _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate (intToTime cardCreatedAt) updateDeck
+
+      -- do push to check card
+      let updatedCard = card {numCorrectTrials = 1, nextRequest = nextRequest}
+      response <- runTestApp conn $ Repo.UserCardView.infeasibleUpdated now updatedCard
+      result <- expectRight response
+      result `shouldBe` False
+
+      return ()
+
   describe "server with AuthResult" $ do
     it "allows authenticated users to access pull endpoint" $ do
       withCleanDb $ \conn -> do

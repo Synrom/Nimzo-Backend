@@ -31,7 +31,7 @@ import Models.Watermelon (PullParams(..), ChangesResponse(..), TableChanges(..),
 import Repo.User as User
 import Repo.UserCardView as UserCardView
 import Repo.UserDeckView as UserDeckView
-import Repo.Utils (ensureM, notNull, flattenChangeset, neitherM, neither, orThrow, arrayLength, getUTCNow, ensure)
+import Repo.Utils (ensureM, notNull, flattenChangeset, neitherM, neither, orThrow, arrayLength, getUTCNow, ensure, validateOrFailWith)
 import Models.UserCardView
 import Models.UserDeckView
 import qualified Repo.Deck as Deck
@@ -112,6 +112,26 @@ updateUser cards username = do
     else do
       pure olduser
 
+reportInfeasibleCardUpdated :: Integer -> UserCardView -> AppM ()
+reportInfeasibleCardUpdated now proposalCard = do
+  origCard <- UserCardView.find proposalCard.ucvId
+  liftIO $ putStrLn "Infeasible card update:"
+  liftIO $ putStrLn ("Old numCorrectTrials: " ++ show origCard.numCorrectTrials)
+  liftIO $ putStrLn ("New numCorrectTrials: " ++ show proposalCard.numCorrectTrials)
+  liftIO $ putStrLn ("Now: " ++ show now)
+  liftIO $ putStrLn ("Old nextRequest: " ++ show origCard.nextRequest)
+  liftIO $ putStrLn ("New nextRequest: " ++ show proposalCard.nextRequest)
+
+reportInfeasibleCardCreated :: Integer -> Integer -> UserCardView -> AppM ()
+reportInfeasibleCardCreated now lastPulledAt proposalCard = do
+  liftIO $ putStrLn "Infeasible card created:"
+  liftIO $ putStrLn ("numCorrectTrials: " ++ show proposalCard.numCorrectTrials)
+  liftIO $ putStrLn ("Now: " ++ show now)
+  liftIO $ putStrLn ("LastPulledAt: " ++ show lastPulledAt)
+  liftIO $ putStrLn ("nextRequest: " ++ show proposalCard.nextRequest)
+
+
+
 pushRoute :: AuthenticatedUser -> PushParams -> AppM Success
 pushRoute user PushParams {lastPulledAt, changes} = do
   let since = intToTime lastPulledAt
@@ -119,8 +139,8 @@ pushRoute user PushParams {lastPulledAt, changes} = do
   let ucvitems = flattenChangeset created updated (user_card_views changes)
       udvitems = flattenChangeset created updated (user_deck_views changes)
   now <- liftIO getUTCNow
-  ensureM infeasibleError $ neitherM $ map (UserCardView.infeasibleUpdated now) changes.user_card_views.updated
-  ensure infeasibleError $ neither $ map (UserCardView.infeasibleCreated now lastPulledAt) changes.user_card_views.created
+  validateOrFailWith infeasibleError (reportInfeasibleCardUpdated now) (UserCardView.infeasibleUpdated now) changes.user_card_views.updated
+  validateOrFailWith infeasibleError (reportInfeasibleCardCreated now lastPulledAt) (pure . UserCardView.infeasibleCreated now lastPulledAt) changes.user_card_views.created
   ensureM mergeError $ neitherM [
     UserDeckView.modified user.username since udvitems,
     UserCardView.modified user.username since ucvitems ]

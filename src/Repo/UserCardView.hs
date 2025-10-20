@@ -97,32 +97,33 @@ insertOrUpdate time unmarked = one =<< runQuery query (card.ucvId , card.userDec
     \RETURNING" <> returnFields
     card = mark unmarked
 
-isFeasible :: Integer -> Integer -> Integer -> Integer -> Bool
-isFeasible now _ _ t | t <= 0 = True
-isFeasible now p n _ | n < p  = False
-isFeasible now prevRequest nextRequest trials = feasibleNrTrials && feasibleLastTry
+isFeasible :: Integer -> Integer -> Integer -> Integer -> Integer -> Bool
+isFeasible now _ _ t _ | t <= 0 = True
+isFeasible now p n _ _ | n < p  = False
+isFeasible now prevRequest nextRequest trialsGain numCorrectTrials = feasibleNrTrials && feasibleLastTry
   where
-    lowerBound 0     = 0
-    lowerBound 1     = 1000 * 60 * 15
-    lowerBound 2     = 1000 * 60 * 15 + lowerBound 1
-    lowerBound 3     = 1000 * 60 * 60 + lowerBound 2
-    lowerBound 4     = 1000 * 60 * 60 * 24 + lowerBound 3
-    lowerBound n     = 43200000 * n * (n-1) - 426600000
-    lastInterval     = (trials-1) * 1000 * 60 * 60 * 24 
-    feasibleNrTrials = (nextRequest - prevRequest) >= lowerBound trials
-    feasibleLastTry  = (nextRequest - lastInterval) <= now
+    lowerBound 0                    = 0
+    lowerBound 1                    = 1000 * 60 * 15
+    lowerBound 2                    = 1000 * 60 * 15 + lowerBound 1
+    lowerBound 3                    = 1000 * 60 * 60 + lowerBound 2
+    lowerBound 4                    = 1000 * 60 * 60 * 24 + lowerBound 3
+    lowerBound n                    = 43200000 * n * (n-1) - 426600000
+    maxLastInterval  num | num <= 1 = 2 * 1000 * 60 * 60 * 24 
+    maxLastInterval  num            = (num-1) * 2 * 1000 * 60 * 60 * 24 
+    feasibleNrTrials                = (nextRequest - prevRequest) >= lowerBound trialsGain
+    feasibleLastTry                 = (nextRequest - maxLastInterval numCorrectTrials) <= now
 
 
 infeasibleUpdated :: MonadDB m => Integer -> UserCardView -> m Bool
 infeasibleUpdated now unmarked = do
   card <- find proposal.ucvId
   let trials = proposal.numCorrectTrials - card.numCorrectTrials
-  return $ not $ isFeasible now card.nextRequest proposal.nextRequest trials
+  return $ not $ isFeasible now card.nextRequest proposal.nextRequest trials proposal.numCorrectTrials
   where
     proposal = mark unmarked
 
 infeasibleCreated :: Integer -> Integer -> UserCardView -> Bool
-infeasibleCreated now lastPulledAt card = not $ isFeasible now lastPulledAt card.nextRequest card.numCorrectTrials
+infeasibleCreated now lastPulledAt card = not $ isFeasible now lastPulledAt card.nextRequest card.numCorrectTrials card.numCorrectTrials
 
 delete :: MonadDB m => String -> UTCTime -> String -> m ()
 delete username deleteAt id = do 

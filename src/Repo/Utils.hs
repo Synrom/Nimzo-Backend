@@ -66,6 +66,12 @@ ensureM err mcond = do
   ok <- mcond
   if ok then pure () else throwError err
 
+validateOrFailWith :: (Monad m, MonadError e m) => e -> (a -> m ()) -> (a -> m Bool) -> [a] -> m()
+validateOrFailWith err reportFn pred list = do
+  failed <- filterM pred list
+  mapM_ reportFn failed
+  if null failed then pure () else throwError err
+
 isNextDay :: UTCTime -> UTCTime -> Bool
 isNextDay t1 t2 = abs (diffDays (utctDay t2) (utctDay t1)) == 1
 
