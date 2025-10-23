@@ -15,6 +15,8 @@ import Routes.Auth
 import Repo.User
 import Models.User
 import App.Auth
+import Repo.Classes (MonadMail(mailCfg))
+import App.Config 
 
 isLeft' :: Either a b -> Bool
 isLeft' (Left _) = True
@@ -27,6 +29,10 @@ spec = describe "Routes.Auth" $ do
     it "creates a new user with hashed password" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "newuser" "newuser@example.com" "plainpassword"
+
+        result <- runTestApp conn mailCfg
+        mail_cfg <- expectRight result
+        mail_cfg.test `shouldBe` True
 
         result <- runTestApp conn $ Routes.Auth.createUser user
         newUserData <- expectRight result

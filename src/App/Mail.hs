@@ -14,6 +14,7 @@ import Repo.Classes
 import App.AppM (AppM(..))
 import App.Env (Env(..))
 import App.Config (MailConfiguration(..))
+import Control.Monad (when, unless)
 
 instance MonadMail AppM where
   sendMail mail = do
@@ -25,77 +26,78 @@ instance MonadMail AppM where
     return env.mailConfig
 
 
-sendVerificationMail :: MonadMail m => String -> String -> m ()
-sendVerificationMail user_name email = do
+sendVerificationMail :: MonadMail m => String -> String -> String -> m ()
+sendVerificationMail user_name email verification_token = do
   auth <- mailCfg
-  let
-    from_address = Address (Just auth.name) auth.mail
-    to_address = [Address (Just $ T.pack user_name) $ T.pack email]
-    cc = []
-    bcc = []
-    subject = "Please Confirm Your Gambit Account"
-    body =
-      htmlPart $
-        TL.pack $
-          "<!DOCTYPE html> \
-          \ <html language=\"en\"> \
-          \ <head> \
-          \ <meta charset=\"UTF-8\"> \
-          \ <title>Verification Email</title> \
-          \ <style>            \
-          \ body {         \
-          \ font-family: Arial, sans-serif;\
-          \ margin: 0; \
-          \ padding: 0;\
-          \ color: #333;\
-          \ }              \
-          \ \
-          \ .wrapper {     \
-          \ width: 90%;\
-          \ max-width: 600px;\
-          \ margin: 0 auto;\
-          \ padding: 40px 0;\
-          \ text-align: center;\
-          \ }              \
-          \ \
-          \ .button {      \
-          \ display: inline-block;\
-          \ color: #fff;\
-          \ background-color: #007bff;\
-          \ border-color: #007bff;\
-          \ padding: .375rem .75rem;\
-          \ font-size: 1rem;\
-          \ border-radius: .25rem;\
-          \ cursor: pointer;\
-          \ text-decoration: none;\
-          \ }              \
-          \ \
-          \ .button:hover {\
-          \ background-color: #0056b3;\
-          \ }              \
-          \ \
-          \ .footer {      \
-          \ margin-top: 40px;\
-          \ font-size: .875rem;\
-          \ color: #6c757d;\
-          \ }              \
-          \ </style>           \
-          \ </head>                \
-          \ <body>                 \
-          \ <div class=\"wrapper\">\
-          \ <h1>Welcome to CampusComments</h1>\
-          \ <p>Dear"
-            ++ user_name
-            ++ ",</p>\
-               \ <p>Thank you for registering on our website. Please verify your email to complete your registration</p>\
-               \ <a href=\""
-            ++ auth.verification_link
-            ++ "?username="
-            ++ user_name
-            ++ "\" class=\"button\">Verify your email</a>\
-               \ <p class=\"footer\">If you didn't make this request, please ignore this email.</p>\
-               \ </div>             \
-               \ </body>                \
-               \ </html>"
-    veritication_mail = simpleMail from_address to_address cc bcc subject [body]
-  sendMail veritication_mail
+  unless auth.test $ do
+    let
+      from_address = Address (Just auth.name) auth.mail
+      to_address = [Address (Just $ T.pack user_name) $ T.pack email]
+      cc = []
+      bcc = []
+      subject = "Please Confirm Your Nimzo Account"
+      body =
+        htmlPart $
+          TL.pack $
+            "<!DOCTYPE html> \
+            \ <html language=\"en\"> \
+            \ <head> \
+            \ <meta charset=\"UTF-8\"> \
+            \ <title>Verification Email</title> \
+            \ <style>            \
+            \ body {         \
+            \ font-family: Arial, sans-serif;\
+            \ margin: 0; \
+            \ padding: 0;\
+            \ color: #333;\
+            \ }              \
+            \ \
+            \ .wrapper {     \
+            \ width: 90%;\
+            \ max-width: 600px;\
+            \ margin: 0 auto;\
+            \ padding: 40px 0;\
+            \ text-align: center;\
+            \ }              \
+            \ \
+            \ .button {      \
+            \ display: inline-block;\
+            \ color: #fff;\
+            \ background-color: #007bff;\
+            \ border-color: #007bff;\
+            \ padding: .375rem .75rem;\
+            \ font-size: 1rem;\
+            \ border-radius: .25rem;\
+            \ cursor: pointer;\
+            \ text-decoration: none;\
+            \ }              \
+            \ \
+            \ .button:hover {\
+            \ background-color: #0056b3;\
+            \ }              \
+            \ \
+            \ .footer {      \
+            \ margin-top: 40px;\
+            \ font-size: .875rem;\
+            \ color: #6c757d;\
+            \ }              \
+            \ </style>           \
+            \ </head>                \
+            \ <body>                 \
+            \ <div class=\"wrapper\">\
+            \ <h1>Welcome to Nimzo</h1>\
+            \ <p>Dear"
+              ++ user_name
+              ++ ",</p>\
+                \ <p>Thank you for registering on our App. Please verify your email to complete your registration</p>\
+                \ <a href=\""
+              ++ auth.verification_link
+              ++ "?token="
+              ++ verification_token
+              ++ "\" class=\"button\">Verify your email</a>\
+                \ <p class=\"footer\">If you didn't make this request, please ignore this email.</p>\
+                \ </div>             \
+                \ </body>                \
+                \ </html>"
+      veritication_mail = simpleMail from_address to_address cc bcc subject [body]
+    sendMail veritication_mail

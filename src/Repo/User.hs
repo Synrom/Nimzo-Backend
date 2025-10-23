@@ -60,3 +60,6 @@ updateXP nrCards olduser = do
   where
     query :: Query
     query = "UPDATE users SET streak = ?, last_activity = ?, xp = ? WHERE username = ? RETURNING" <> returnFields
+
+verify :: MonadDB m => String -> m ()
+verify username = void $ execute "UPDATE users SET verified = TRUE WHERE username = ?" (Only username)

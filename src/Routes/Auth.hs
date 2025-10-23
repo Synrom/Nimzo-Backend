@@ -29,6 +29,7 @@ import App.Auth
 import Models.User
 import Repo.User
 import App.AppM
+import App.Mail
 import Repo.Classes
 import Repo.Utils
 import App.Error (AppError(..))
@@ -55,6 +56,8 @@ createUser user = do
   let pwdhash = hashWithSalt s user.password
   dbuser <- Repo.User.insert $ user {Models.User.password = pwdhash, salt = s}
   tokens <- createTokens dbuser
+  verification_token <- createUserVerification dbuser
+  sendVerificationMail user.username user.email verification_token
   return $ newUser tokens dbuser
 
 authCheck :: AuthRequest -> AppM NewUser

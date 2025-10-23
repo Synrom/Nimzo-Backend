@@ -30,8 +30,9 @@ data MailConfiguration = Google
     password :: String,
     name :: T.Text,
     mail :: T.Text,
-    verification_link :: String
-  }
+    verification_link :: String,
+    test :: Bool
+  } deriving (Show)
 
 loadMailConfig :: IO MailConfiguration
 loadMailConfig = do
@@ -42,7 +43,7 @@ loadMailConfig = do
   name_ <- T.pack <$> Env.getEnv "NAME"
   mail_ <- T.pack <$> Env.getEnv "MAIL"
   link <- Env.getEnv "VERIFICATION_LINK"
-  return $ Google user_name pwd name_ mail_ link
+  return $ Google user_name pwd name_ mail_ link False
 
 loadJWT :: IO JWTSettings
 loadJWT = do

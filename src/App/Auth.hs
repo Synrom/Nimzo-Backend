@@ -37,6 +37,13 @@ instance FromJSON AuthenticatedUser
 instance ToJWT    AuthenticatedUser
 instance FromJWT  AuthenticatedUser
 
+newtype UserVerification = UserVerification
+  { username :: String } deriving (Eq, Show, Generic)
+instance ToJSON   UserVerification
+instance FromJSON UserVerification
+instance ToJWT    UserVerification
+instance FromJWT  UserVerification
+
 data RefreshTokenContent = RTContent
   { username :: String
   , email    :: String
@@ -95,6 +102,13 @@ createTokens user = do
   accessToken <- liftIO (makeJWT accessTokenContent jwtCfg (Just tokenExpires)) >>= rightOrThrow failedCreatingTokenError
   refreshToken <- liftIO (makeJWT refreshTokenContent jwtCfg Nothing) >>= rightOrThrow failedCreatingTokenError
   return $ AuthTokens (toString accessToken) (toString refreshToken) tokenExpires
+
+createUserVerification :: MonadJWTSettings m => User -> m String
+createUserVerification user = do
+  jwtCfg <- askJwtCfg
+  let verification = UserVerification user.username
+  token <-  liftIO (makeJWT verification jwtCfg Nothing) >>= rightOrThrow failedCreatingTokenError
+  return $ toString token
 
 newUser :: AuthTokens -> User -> NewUser
 newUser tokens us = NewUser tokens us.username us.premium us.xp us.email us.verified
