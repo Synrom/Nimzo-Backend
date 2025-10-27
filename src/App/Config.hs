@@ -5,13 +5,13 @@ import Configuration.Dotenv (load, parseFile)
 import qualified System.Environment as Env
 import Servant.Auth.Server (fromSecret, JWTSettings, defaultJWTSettings)
 import Data.ByteString.Char8 (pack)
+import Data.ByteString (ByteString)
 
 import Database.PostgreSQL.Simple
   ( ConnectInfo
       ( connectDatabase,
         connectHost,
-        connectPassword,
-        connectPort,
+        connectPassword, connectPort,
         connectUser
       ),
     defaultConnectInfo
@@ -51,3 +51,9 @@ loadJWT = do
   load False values
   secret <- Env.getEnv "JWT_SECRET"
   pure $ defaultJWTSettings $ fromSecret $ pack secret
+
+loadWebOrigin :: IO ByteString
+loadWebOrigin = do
+  values <- parseFile ".env"
+  load False values
+  pack <$> Env.getEnv "WEBORIGIN"

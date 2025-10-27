@@ -47,7 +47,8 @@ import Servant.Auth.Server
     verifyJWT,
   )
 import Servant.Server (Context ((:.)))
-
+import Data.Text
+import Servant.Foreign
 import Servant.Auth (Auth, JWT)
 import Models.User (User(..))
 import Models.Deck (Deck(..))
@@ -70,3 +71,11 @@ type API =
 
 api :: Proxy API
 api = Proxy
+
+instance (HasForeign lang ftype api) 
+  => HasForeign lang ftype (Auth authSchemes user :> api) where
+  type Foreign ftype (Auth authSchemes user :> api) = Foreign ftype api
+  foreignFor lang ftype Proxy = foreignFor lang ftype (Proxy :: Proxy api)
+
+endpoints :: [Req NoContent]
+endpoints = listFromAPI (Proxy :: Proxy NoTypes) (Proxy :: Proxy NoContent) (Proxy :: Proxy API)

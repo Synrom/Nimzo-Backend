@@ -17,7 +17,7 @@
 module Routes.Auth where
 
 import qualified Data.Text as T
-import Servant (throwError, type (:<|>) (..), ServerError(..), err404, err401, type (:>), JSON, ReqBody, JSON, Post, )
+import Servant (throwError, type (:<|>) (..), ServerError(..), err404, err401, type (:>), JSON, ReqBody, JSON, Post)
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import Data.ByteString.Char8 as C
 import Control.Monad.Except
@@ -33,16 +33,19 @@ import App.Mail
 import Repo.Classes
 import Repo.Utils
 import App.Error (AppError(..))
+import Models.Watermelon (Success (Success), JsonableMsg (..))
 
 type API = 
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] User :> Post '[JSON] NewUser
     :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokenRequest :> Post '[JSON] AuthTokens
+    :<|> "verify" :> ReqBody '[JSON] Token :> Post '[JSON] JsonableMsg
 
 type Server = 
   (AuthRequest -> AppM NewUser)
   :<|> (User -> AppM NewUser)
   :<|> (AuthTokenRequest -> AppM AuthTokens)
+  :<|> (Token -> AppM JsonableMsg)
 
 unauthorized :: AppError
 unauthorized = Unauthorized "Username/Email or password is wrong."
@@ -77,5 +80,11 @@ refreshToken (AuthTokenRequest reftoken) = do
   accessToken <- liftIO (makeJWT accessTokenContent jwtCfg (Just tokenExpires)) >>= rightOrThrow invalidToken
   return $ AuthTokens (toString accessToken) reftoken tokenExpires
 
+verifyUser :: Token -> AppM JsonableMsg
+verifyUser token = do 
+  user <- orThrow invalidToken =<< decodeVerificationToken token
+  verify user.username 
+  return $ Msg "Account verified."
+
 server :: Server
-server = authCheck :<|> createUser :<|> refreshToken
+server = authCheck :<|> createUser :<|> refreshToken :<|> verifyUser

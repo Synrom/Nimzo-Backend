@@ -12,6 +12,7 @@ import Control.Monad.IO.Class
 
 import TestHelpers
 import Routes.Auth
+import Routes.User
 import Repo.User
 import Models.User
 import App.Auth
@@ -164,3 +165,20 @@ spec = describe "Routes.Auth" $ do
       let hash2 = hashWithSalt salt password
 
       hash1 `shouldBe` hash2
+
+  describe "verify user" $ do
+    it "checks that verifying a user works" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "xpuser" "xp@example.com" "hashedpassword"
+
+        newUserData <- expectRight =<< runTestApp conn (Routes.Auth.createUser user)
+        userBeforeVerification <- expectRight =<< runTestApp conn (Routes.User.getUserRoute user.username)
+        userBeforeVerification.verified `shouldBe` False
+
+        result <- runTestApp conn $ do
+          token <- createUserVerification user
+          Routes.Auth.verifyUser $ Token token
+        _ <- expectRight result
+
+        userAfterVerification <- expectRight =<< runTestApp conn (Routes.User.getUserRoute user.username)
+        userAfterVerification.verified `shouldBe` True

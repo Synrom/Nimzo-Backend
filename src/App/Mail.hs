@@ -86,7 +86,7 @@ sendVerificationMail user_name email verification_token = do
             \ <body>                 \
             \ <div class=\"wrapper\">\
             \ <h1>Welcome to Nimzo</h1>\
-            \ <p>Dear"
+            \ <p>Dear "
               ++ user_name
               ++ ",</p>\
                 \ <p>Thank you for registering on our App. Please verify your email to complete your registration</p>\

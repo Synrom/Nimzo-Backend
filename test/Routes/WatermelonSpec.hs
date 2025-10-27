@@ -114,7 +114,7 @@ spec = describe "Routes.Watermelon" $ do
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
         success <- expectRight result
 
-        msg success `shouldBe` "Synched successfully."
+        success.msg `shouldBe` "Synched successfully."
 
         -- Verify deck was inserted
         decks <- runTestApp conn $ Repo.UserDeckView.createdSince "pushuser" Nothing
@@ -142,7 +142,7 @@ spec = describe "Routes.Watermelon" $ do
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
         success <- expectRight result
 
-        msg success `shouldBe` "Synched successfully."
+        success.msg `shouldBe` "Synched successfully."
 
         -- Verify card was inserted
         cards <- runTestApp conn $ Repo.UserCardView.createdSince "pushuser2" Nothing
@@ -172,7 +172,7 @@ spec = describe "Routes.Watermelon" $ do
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
         success <- expectRight result
 
-        msg success `shouldBe` "Synched successfully."
+        success.msg `shouldBe` "Synched successfully."
 
         let between = intToTime $ lastPulled - 1
         let after = intToTime $ lastPulled + 1
@@ -223,7 +223,7 @@ spec = describe "Routes.Watermelon" $ do
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
         success <- expectRight result
 
-        msg success `shouldBe` "Synched successfully."
+        success.msg `shouldBe` "Synched successfully."
 
         let pullParams = mkTestPullParams $ intToTime betweenCreationAndDeletionTime
         result <- runTestApp conn $ Routes.Watermelon.pullRoute "deleteuser" pullParams
@@ -257,7 +257,7 @@ spec = describe "Routes.Watermelon" $ do
         let authUser = AUser "deleteuser" False now
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
         success <- expectRight result
-        msg success `shouldBe` "Synched successfully."
+        success.msg `shouldBe` "Synched successfully."
 
         let pullParams = mkTestPullParams $ intToTime beforeCreation
         result <- runTestApp conn $ Routes.Watermelon.pullRoute "deleteuser" pullParams

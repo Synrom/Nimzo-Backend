@@ -83,6 +83,13 @@ data Success = Success {
   msg :: String
 } deriving (Eq, Show, Generic)
 
+newtype JsonableMsg = Msg {
+  msg :: String
+} deriving (Eq, Show, Generic)
+
+instance ToJSON JsonableMsg
+instance FromJSON JsonableMsg
+
 newtype DatabaseTime = DatabaseTime {
   time :: UTCTime
 } deriving (Eq, Show, Generic)

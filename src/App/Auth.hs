@@ -9,6 +9,7 @@ module App.Auth where
 import GHC.Generics (Generic)
 import Data.Time
 import Data.ByteString.Lazy.UTF8 (toString)
+import Data.ByteString.Char8 (pack)
 import Control.Monad.Reader
 import Control.Monad.Except
 import Servant.Auth.Server
@@ -43,6 +44,8 @@ instance ToJSON   UserVerification
 instance FromJSON UserVerification
 instance ToJWT    UserVerification
 instance FromJWT  UserVerification
+newtype Token = Token { token :: String } deriving (Eq, Show, Generic)
+instance FromJSON  Token
 
 data RefreshTokenContent = RTContent
   { username :: String
@@ -102,6 +105,11 @@ createTokens user = do
   accessToken <- liftIO (makeJWT accessTokenContent jwtCfg (Just tokenExpires)) >>= rightOrThrow failedCreatingTokenError
   refreshToken <- liftIO (makeJWT refreshTokenContent jwtCfg Nothing) >>= rightOrThrow failedCreatingTokenError
   return $ AuthTokens (toString accessToken) (toString refreshToken) tokenExpires
+
+decodeVerificationToken :: MonadJWTSettings m => Token -> m (Maybe UserVerification)
+decodeVerificationToken token = do
+  jwtCfg <- askJwtCfg
+  liftIO $ verifyJWT jwtCfg (pack token.token)
 
 createUserVerification :: MonadJWTSettings m => User -> m String
 createUserVerification user = do

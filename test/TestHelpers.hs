@@ -87,6 +87,10 @@ expectRight :: Show e => Either e a -> IO a
 expectRight (Right a) = return a
 expectRight (Left e) = error $ "Expected Right but got Left: " ++ show e
 
+expectJust :: Maybe e -> IO e
+expectJust (Just e) = return e
+expectJust Nothing  = error "Expected Just bot got Nothing"
+
 expectLeft :: Either e a -> IO e
 expectLeft (Left e) = return e
 expectLeft (Right _) = error "Expected Left but got Right"
