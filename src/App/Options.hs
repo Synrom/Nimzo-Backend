@@ -1,10 +1,23 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 
 module App.Options where
 
 import Servant
 import Servant.Foreign
+import Servant.Auth (Auth)
 import Network.Wai
 import Data.Text hiding (null, zipWith, length)
 import Network.HTTP.Types.Method
@@ -13,13 +26,23 @@ import Data.List (nub)
 import Network.HTTP.Types
 import qualified Data.ByteString as B
 
-provideOptions :: [Req NoContent] -> Middleware
-provideOptions mlist app req cb
+instance (HasForeign lang ftype api) 
+  => HasForeign lang ftype (Auth authSchemes user :> api) where
+  type Foreign ftype (Auth authSchemes user :> api) = Foreign ftype api
+  foreignFor lang ftype Proxy = foreignFor lang ftype (Proxy :: Proxy api)
+
+-- lang = NoTypes
+-- ftype = NoContent
+-- (HasForeign NoTypes NoContent api, GenerateList NoContent (Foreign NoContent api))
+provideOptions :: (HasForeign NoTypes NoContent api, GenerateList NoContent (Foreign NoContent api))
+               => Proxy api -> Middleware
+provideOptions apiproxy app req cb
   | rmeth == "OPTIONS" = optional cb prior pinfo mlist
   | otherwise          = prior
   where
   rmeth = requestMethod req :: Method
   pinfo = pathInfo      req :: [ Text ]
+  mlist = listFromAPI (Proxy :: Proxy NoTypes) (Proxy :: Proxy NoContent) apiproxy
   prior = app req cb
 
 optional :: (Response -> r) -> r -> [Text] -> [Req NoContent] -> r
