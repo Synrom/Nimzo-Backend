@@ -89,7 +89,7 @@ sendVerificationMail user_name email verification_token = do
             \ <p>Dear "
               ++ user_name
               ++ ",</p>\
-                \ <p>Thank you for registering on our App. Please verify your email to complete your registration</p>\
+                \ <p>Thank you for registering on the Nimzo App. Please verify your email to complete your registration</p>\
                 \ <a href=\""
               ++ auth.verification_link
               ++ "?token="

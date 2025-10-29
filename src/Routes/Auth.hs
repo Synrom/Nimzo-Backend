@@ -26,6 +26,7 @@ import Servant.Auth.Server
 import Control.Monad.Reader
 import Control.Monad
 import App.Auth
+import App.Async
 import Models.User
 import Repo.User
 import App.AppM
@@ -59,8 +60,9 @@ createUser user = do
   let pwdhash = hashWithSalt s user.password
   dbuser <- Repo.User.insert $ user {Models.User.password = pwdhash, salt = s}
   tokens <- createTokens dbuser
-  verification_token <- createUserVerification dbuser
-  sendVerificationMail user.username user.email verification_token
+  forkAppM $ do
+    verification_token <- createUserVerification dbuser
+    sendVerificationMail user.username user.email verification_token
   return $ newUser tokens dbuser
 
 authCheck :: AuthRequest -> AppM NewUser
