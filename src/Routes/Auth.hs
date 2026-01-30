@@ -17,7 +17,7 @@
 module Routes.Auth where
 
 import qualified Data.Text as T
-import Servant (throwError, type (:<|>) (..), ServerError(..), err404, err401, type (:>), JSON, ReqBody, JSON, Post)
+import Servant (throwError, type (:<|>) (..), ServerError(..), err404, err401, type (:>), JSON, ReqBody, JSON, Post, Delete)
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import Data.ByteString.Char8 as C
 import Control.Monad.Except
@@ -39,12 +39,14 @@ import Models.Watermelon (Success (Success), JsonableMsg (..))
 type API = 
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] User :> Post '[JSON] NewUser
+    :<|> "user" :> ReqBody '[JSON] AuthTokenRequest :> Delete '[JSON] JsonableMsg
     :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokenRequest :> Post '[JSON] AuthTokens
     :<|> "verify" :> ReqBody '[JSON] Token :> Post '[JSON] JsonableMsg
 
 type Server = 
   (AuthRequest -> AppM NewUser)
   :<|> (User -> AppM NewUser)
+  :<|> (AuthTokenRequest -> AppM JsonableMsg)
   :<|> (AuthTokenRequest -> AppM AuthTokens)
   :<|> (Token -> AppM JsonableMsg)
 
@@ -82,6 +84,13 @@ refreshToken (AuthTokenRequest reftoken) = do
   accessToken <- liftIO (makeJWT accessTokenContent jwtCfg (Just tokenExpires)) >>= rightOrThrow invalidToken
   return $ AuthTokens (toString accessToken) reftoken tokenExpires
 
+deleteUser :: AuthTokenRequest -> AppM JsonableMsg
+deleteUser (AuthTokenRequest reftoken) = do
+  jwtCfg <- askJwtCfg
+  rt:: RefreshTokenContent <- liftIO (verifyJWT jwtCfg (C.pack reftoken)) >>= orThrow invalidToken
+  Repo.User.delete rt.username
+  return $ Msg "Successfully deleted user."
+
 verifyUser :: Token -> AppM JsonableMsg
 verifyUser token = do 
   user <- orThrow invalidToken =<< decodeVerificationToken token
@@ -89,4 +98,9 @@ verifyUser token = do
   return $ Msg "Account verified."
 
 server :: Server
-server = authCheck :<|> createUser :<|> refreshToken :<|> verifyUser
+server = 
+  authCheck 
+  :<|> createUser 
+  :<|> deleteUser 
+  :<|> refreshToken 
+  :<|> verifyUser

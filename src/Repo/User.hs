@@ -28,6 +28,28 @@ insert user = one =<< runQuery query (user.username, user.password, user.salt, u
     query :: Query
     query = "INSERT INTO users (username, password, salt, email) VALUES (?,?,?,?) RETURNING " <> returnFields
 
+delete :: MonadDB m => String -> m ()
+delete username = do
+  -- delete all user cards
+  execute "DELETE FROM user_card_views WHERE user_id = ?" (Only username)
+
+  -- delete all decks
+  execute "DELETE FROM decks WHERE author = ?" (Only username)
+
+  -- delete all user decks
+  execute "DELETE FROM user_deck_views WHERE user_id = ?" (Only username)
+
+  -- delete all deleted_udvs
+  execute "DELETE FROM deleted_udvs WHERE user_id = ?" (Only username)
+
+  -- delete all deleted_ucvs
+  execute "DELETE FROM deleted_ucvs WHERE user_id = ?" (Only username)
+
+  -- delete user
+  execute "DELETE FROM users WHERE username = ?" (Only username)
+  return ()
+
+
 find :: MonadDB m => String -> m (Maybe User)
 find name = do
   listToMaybe <$> runQuery query (name, name)
