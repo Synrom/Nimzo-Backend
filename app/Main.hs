@@ -27,6 +27,6 @@ main = do
       ctx    = jwtCfg :. cookie :. EmptyContext
   withStdoutLogger $ \logger -> do
     let settings = setPort 8080 $ setLogger logger defaultSettings -- TODO: make port configurable
-    let policy = simpleCorsResourcePolicy {corsOrigins = Just ([origin], True), corsRequestHeaders = [ "content-type" ] }
+    let policy = simpleCorsResourcePolicy {corsOrigins = Just ([origin], True), corsRequestHeaders = [ "content-type", "authorization" ] }
     putStrLn "Running server on port 8080 ..."
     runSettings settings $ cors (const $ Just policy) $ provideOptions api $ serveWithContext api ctx (mkServer env)

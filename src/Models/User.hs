@@ -25,6 +25,18 @@ data User = User
   }
   deriving (Eq, Show, Generic)
 
+data UserID = UID
+  { email :: String,
+    username :: String,
+    premium :: Bool
+  }
+  deriving (Eq, Show, Generic)
+
+newtype UserEmail = UEmail
+  { email :: String }
+  deriving (Eq, Show, Generic)
+
+
 data PublicUser = PublicUser
   { username :: String,
     premium :: Bool,
@@ -36,6 +48,10 @@ data PublicUser = PublicUser
   }
   deriving (Eq, Show, Generic)
 
+newtype NewPassword = NewPwd
+  { pwd :: T.Text }
+  deriving (Eq, Show, Generic)
+
 data UserXP = UserXP
   { username :: String,
     xp :: Integer,
@@ -44,6 +60,11 @@ data UserXP = UserXP
   deriving (Eq, Show, Generic)
 
 
+instance FromRow UserID
+instance ToJSON NewPassword
+instance FromJSON NewPassword
+instance ToJSON UserEmail
+instance FromJSON UserEmail
 instance ToJSON User
 instance FromJSON User
 instance FromRow User

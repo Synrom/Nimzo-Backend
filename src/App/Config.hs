@@ -31,6 +31,7 @@ data MailConfiguration = Google
     name :: T.Text,
     mail :: T.Text,
     verification_link :: String,
+    change_pwd_link :: String,
     test :: Bool
   } deriving (Show)
 
@@ -42,8 +43,9 @@ loadMailConfig = do
   pwd <- Env.getEnv "PASSWORD"
   name_ <- T.pack <$> Env.getEnv "NAME"
   mail_ <- T.pack <$> Env.getEnv "MAIL"
-  link <- Env.getEnv "VERIFICATION_LINK"
-  return $ Google user_name pwd name_ mail_ link False
+  verify_link <- Env.getEnv "VERIFICATION_LINK"
+  changepwd_link <- Env.getEnv "CHANGE_PWD_LINK"
+  return $ Google user_name pwd name_ mail_ verify_link changepwd_link False
 
 loadJWT :: IO JWTSettings
 loadJWT = do

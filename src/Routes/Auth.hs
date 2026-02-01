@@ -40,6 +40,7 @@ type API =
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] User :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] AuthTokenRequest :> Delete '[JSON] JsonableMsg
+    :<|> "user" :> "reqChange" :> ReqBody '[JSON] UserEmail :> Post '[JSON] JsonableMsg
     :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokenRequest :> Post '[JSON] AuthTokens
     :<|> "verify" :> ReqBody '[JSON] Token :> Post '[JSON] JsonableMsg
 
@@ -47,6 +48,7 @@ type Server =
   (AuthRequest -> AppM NewUser)
   :<|> (User -> AppM NewUser)
   :<|> (AuthTokenRequest -> AppM JsonableMsg)
+  :<|> (UserEmail -> AppM JsonableMsg)
   :<|> (AuthTokenRequest -> AppM AuthTokens)
   :<|> (Token -> AppM JsonableMsg)
 
@@ -97,10 +99,20 @@ verifyUser token = do
   verify user.username 
   return $ Msg "Account verified."
 
+requestChangePwd :: UserEmail -> AppM JsonableMsg
+requestChangePwd umail = do
+  userid <- Repo.User.getUserID umail
+  jwtCfg <- askJwtCfg
+  forkAppM $ do
+    access_token <- createChangePwdToken userid
+    sendChangePasswordMail userid.username umail.email access_token
+  return $ Msg "Successfully send change password email."
+
 server :: Server
 server = 
   authCheck 
   :<|> createUser 
   :<|> deleteUser 
+  :<|> requestChangePwd
   :<|> refreshToken 
   :<|> verifyUser

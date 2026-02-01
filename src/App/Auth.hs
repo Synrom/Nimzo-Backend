@@ -21,7 +21,7 @@ import System.Random (newStdGen, randomRs)
 import Data.List as L
 import Servant (throwError, err500, ServerError(..))
 import Repo.Classes
-import Models.User (User(..))
+import Models.User (User(..), UserID(..))
 import App.Error
 import Repo.Utils
 
@@ -93,6 +93,9 @@ generateSalt = do
 tokenDuration :: NominalDiffTime -- TODO: make configurable
 tokenDuration = secondsToNominalDiffTime 86400
 
+changeEmailDuration :: NominalDiffTime 
+changeEmailDuration = secondsToNominalDiffTime 86400
+
 failedCreatingTokenError :: AppError
 failedCreatingTokenError  = Internal "Failed to create token."
 
@@ -105,6 +108,15 @@ createTokens user = do
   accessToken <- liftIO (makeJWT accessTokenContent jwtCfg (Just tokenExpires)) >>= rightOrThrow failedCreatingTokenError
   refreshToken <- liftIO (makeJWT refreshTokenContent jwtCfg Nothing) >>= rightOrThrow failedCreatingTokenError
   return $ AuthTokens (toString accessToken) (toString refreshToken) tokenExpires
+
+createChangePwdToken :: MonadJWTSettings m => UserID -> m String
+createChangePwdToken user = do
+  jwtCfg <- askJwtCfg
+  tokenExpires <- addUTCTime changeEmailDuration <$> liftIO getCurrentTime
+  let accessTokenContent = AUser user.username user.premium tokenExpires
+  accessToken <- liftIO (makeJWT accessTokenContent jwtCfg (Just tokenExpires)) >>= rightOrThrow failedCreatingTokenError
+  return $ toString accessToken
+
 
 decodeVerificationToken :: MonadJWTSettings m => Token -> m (Maybe UserVerification)
 decodeVerificationToken token = do

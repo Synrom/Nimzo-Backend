@@ -5,6 +5,7 @@
 module Repo.User where
 
 import Database.PostgreSQL.Simple (Only(..), Query)
+import qualified Data.Text as T
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Maybe (listToMaybe)
@@ -15,7 +16,7 @@ import Repo.Classes
 import Models.Deck (Deck(..))
 import Repo.Utils (one, isNextDay, twoOrMoreDaysPassed)
 import App.Error (AppError(..))
-import Models.User (User(..), UserXP)
+import Models.User (User(..), UserXP, UserEmail(..), UserID(..))
 import Repo.Xp (calcXp)
 import App.AppM (AppM)
 
@@ -27,6 +28,15 @@ insert user = one =<< runQuery query (user.username, user.password, user.salt, u
   where
     query :: Query
     query = "INSERT INTO users (username, password, salt, email) VALUES (?,?,?,?) RETURNING " <> returnFields
+
+changePwd :: MonadDB m => String -> T.Text -> T.Text -> m ()
+changePwd username salt pwd = void $ execute "UPDATE users SET password = ?, salt = ? WHERE username = ?" (pwd, salt, username)
+
+getUserID :: MonadDB m => UserEmail -> m UserID
+getUserID (UEmail email) = one =<< runQuery query (Only email)
+  where
+    query :: Query
+    query = "SELECT email, username, premium FROM users WHERE email = ?"
 
 delete :: MonadDB m => String -> m ()
 delete username = do
