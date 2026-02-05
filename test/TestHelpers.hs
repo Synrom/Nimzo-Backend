@@ -69,7 +69,7 @@ mkTestEnv :: Connection -> IO Env
 mkTestEnv conn = do
   jwtKey <- generateKey
   let jwtCfg = defaultJWTSettings jwtKey
-  let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" True
+  let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" "http://localhost/change" True
   return $ Env conn jwtCfg mailCfg
 
 -- | Run an AppM action in a test environment

@@ -215,7 +215,7 @@ spec = describe "Routes.Watermelon" $ do
         let betweenCreationAndDeletionTime = floor $ utcTimeToPOSIXSeconds now - 10
 
         let deckChanges = TableChanges [] [] ["delete_deck"]
-        let cardChanges = TableChanges [] [] ["card1"]
+        let cardChanges = TableChanges [] [] []
         let changeSet = Changes { user_card_views = cardChanges, user_deck_views = deckChanges }
         let pushParams = PushParams deletedAt changeSet
 

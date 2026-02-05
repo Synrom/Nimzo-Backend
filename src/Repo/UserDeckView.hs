@@ -8,12 +8,14 @@ import Data.Time (UTCTime, getCurrentTime)
 import Data.String (fromString)
 import Data.Maybe (fromMaybe)
 import Data.List (stripPrefix)
+import Data.Text (Text, unpack)
 import Database.PostgreSQL.Simple (Query, Only(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.Watermelon (DatabaseTime(..))
 import Models.Deck (Deck(..))
 import Repo.Utils (notNull, one, orMinTime, removePrefix)
 import Repo.Classes
+import qualified Repo.UserCardView
 import Control.Monad.IO.Class (MonadIO(liftIO))
 
 returnFields :: Query
@@ -27,6 +29,9 @@ mark udv = udv { udvId = markString udv.userId udv.udvId }
 
 unmark :: UserDeckView -> UserDeckView
 unmark udv = udv { udvId = removePrefix udv.userId udv.udvId}
+
+unmarkString :: String -> String -> String
+unmarkString = removePrefix 
 
 markAll :: [UserDeckView] -> [UserDeckView]
 markAll = map mark
@@ -93,9 +98,19 @@ insertOrUpdate time unmarked = one =<< runQuery query
     \RETURNING" <> returnFields
     deck = mark unmarked
 
+findCardsOfUDV :: MonadDB m => String -> m [String]
+findCardsOfUDV markedId = do
+  rows :: [Only String] <- runQuery
+          "SELECT id FROM user_card_views WHERE user_deck_id = ?"
+          (Only markedId)
+  let ucv_ids :: [String] = map fromOnly rows
+  return ucv_ids
+
 delete :: MonadDB m => String -> UTCTime -> String -> m ()
 delete username deletedAt id = do 
   execute "DELETE FROM decks WHERE user_deck_id = ?" (Only $ markString username id)
+  ucv_ids <- findCardsOfUDV $ markString username id
+  mapM_ (Repo.UserCardView.delete username deletedAt . unmarkString username) ucv_ids
   DatabaseTime createdAt  <- one =<< runQuery "DELETE FROM user_deck_views WHERE id = ? RETURNING created_at" (Only $ markString username id)
   execute "INSERT INTO deleted_udvs (id, user_id, created_at, deleted_at) VALUES (?, ?, ?, ?)" (markString username id, username, createdAt, deletedAt)
   return ()
