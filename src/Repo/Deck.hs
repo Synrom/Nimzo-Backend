@@ -41,12 +41,15 @@ insertOrUpdate deck = let
 
 search :: MonadDB m => Maybe String -> m [Deck]
 search Nothing = return []
-search (Just s) = runQuery query (Only s)
+search (Just s) = runQuery query (s, s)
   where
     query :: Query
     query = 
       "SELECT" <> returnFields <>
-      "FROM decks WHERE name ILIKE '%' || ? || '%'" 
+      "FROM decks \
+      \WHERE is_public = TRUE \
+      \AND search_vector @@ plainto_tsquery('english', ?) \
+      \ORDER BY ts_rank(search_vector, plainto_tsquery('english', ?)) DESC"
 
 find :: MonadDB m => Integer -> m Deck
 find deckId = one =<< runQuery

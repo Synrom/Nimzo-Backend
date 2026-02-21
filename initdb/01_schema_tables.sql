@@ -66,3 +66,11 @@ CREATE TABLE deleted_ucvs (
   deleted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE
 );
+
+ALTER TABLE decks ADD COLUMN search_vector tsvector
+  GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', coalesce(name, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(description, '')), 'B')
+  ) STORED;
+
+CREATE INDEX decks_search_vector_idx ON decks USING GIN (search_vector);

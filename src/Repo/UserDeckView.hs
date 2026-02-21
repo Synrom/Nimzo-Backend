@@ -103,8 +103,7 @@ findCardsOfUDV markedId = do
   rows :: [Only String] <- runQuery
           "SELECT id FROM user_card_views WHERE user_deck_id = ?"
           (Only markedId)
-  let ucv_ids :: [String] = map fromOnly rows
-  return ucv_ids
+  return $ map fromOnly rows
 
 delete :: MonadDB m => String -> UTCTime -> String -> m ()
 delete username deletedAt id = do 
