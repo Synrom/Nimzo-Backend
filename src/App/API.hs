@@ -61,13 +61,13 @@ import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
 
 type SecureAPI =
-  DeckRoutes.API 
-  :<|> Watermelon.API
+  Watermelon.API
   :<|> User.API
 
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI
     :<|> AuthRoutes.API
+    :<|> DeckRoutes.API 
 
 api :: Proxy API
 api = Proxy

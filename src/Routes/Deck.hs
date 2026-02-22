@@ -44,9 +44,8 @@ own user deck = deck {author = user.username}
 setId :: Integer -> Deck -> Deck
 setId id deck = deck { deckId = id }
 
-server :: AuthResult AuthenticatedUser -> Server
-server (Authenticated user) = 
+server :: Server
+server = 
   Repo.Deck.search
   :<|> Repo.Deck.find
   :<|> Repo.Deck.listCardsOfDeck 
-server _ = throwAppError $ Unauthorized "No access."

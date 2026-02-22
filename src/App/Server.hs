@@ -26,12 +26,12 @@ import qualified Routes.User as User
 import App.Auth (AuthenticatedUser)
 
 secureServerT :: AuthResult AuthenticatedUser -> ServerT SecureAPI AppM
-secureServerT auth = DeckRoutes.server auth 
-  :<|> Watermelon.server auth 
+secureServerT auth = 
+  Watermelon.server auth 
   :<|> User.server auth 
 
 serverT :: ServerT API AppM
-serverT = secureServerT :<|> AuthRoutes.server
+serverT = secureServerT :<|> AuthRoutes.server :<|> DeckRoutes.server 
 
 mkServer :: Env -> Servant.Server API
 mkServer env = hoistServerWithContext api (Proxy :: Proxy '[JWTSettings, CookieSettings]) (nt env) serverT
