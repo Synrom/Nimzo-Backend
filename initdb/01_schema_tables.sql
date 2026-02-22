@@ -74,3 +74,9 @@ ALTER TABLE decks ADD COLUMN search_vector tsvector
   ) STORED;
 
 CREATE INDEX decks_search_vector_idx ON decks USING GIN (search_vector);
+
+ALTER TABLE decks ADD COLUMN search_vector_name tsvector
+  GENERATED ALWAYS AS (
+    to_tsvector('english', name)
+  ) STORED;
+CREATE INDEX decks_search_vector_name_idx ON decks USING GIN (search_vector_name);
