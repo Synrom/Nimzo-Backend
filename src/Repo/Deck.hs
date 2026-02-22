@@ -6,6 +6,7 @@ module Repo.Deck where
 
 import Database.PostgreSQL.Simple (Only(..), Query)
 import Data.String (fromString)
+import Data.String.HT (trim)
 import Control.Monad
 import Repo.Classes
 import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast)
@@ -38,6 +39,22 @@ insertOrUpdate deck = let
     one =<< runQuery 
       query 
       (deck.name, deck.isPublic, deck.description, deck.numCardsTotal, deck.author, deck.user_deck_id)
+
+searchInstant :: MonadDB m => Maybe String -> m [Deck]
+searchInstant Nothing = return []
+searchInstant (Just s)
+  | stripped == "" = return []
+  | otherwise = runQuery query (stripped, stripped)
+  where
+    stripped = trim s
+    query :: Query
+    query =
+      "SELECT" <> returnFields <>
+      "FROM decks \
+      \WHERE is_public = TRUE \
+      \AND search_vector_name @@ to_tsquery('english', ? || ':*') \
+      \ORDER BY ts_rank(search_vector_name, to_tsquery('english', ? || ':*')) DESC \
+      \LIMIT 10"
 
 search :: MonadDB m => Maybe String -> m [Deck]
 search Nothing = return []

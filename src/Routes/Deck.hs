@@ -29,12 +29,14 @@ import Repo.Deck
 import Models.Card (Card, CardQuery, PagedCards)
 
 type API = 
-  "deck" :> "search" :> QueryParam "query" String :> Get '[JSON] [Deck]
+  "deck" :> "search" :> "full" :> QueryParam "query" String :> Get '[JSON] [Deck]
+  :<|> "deck" :> "search" :> "instant" :> QueryParam "query" String :> Get '[JSON] [Deck]
   :<|> "deck" :> Capture "id" Integer :> Get '[JSON] Deck
   :<|> "deck" :> "cards" :> ReqBody '[JSON] CardQuery :> Post '[JSON] PagedCards
 
 type Server = 
   (Maybe String -> AppM [Deck])
+  :<|> (Maybe String -> AppM [Deck])
   :<|> (Integer -> AppM Deck)
   :<|> (CardQuery -> AppM PagedCards)
 
@@ -47,5 +49,6 @@ setId id deck = deck { deckId = id }
 server :: Server
 server = 
   Repo.Deck.search
+  :<|> Repo.Deck.searchInstant
   :<|> Repo.Deck.find
   :<|> Repo.Deck.listCardsOfDeck 
