@@ -15,6 +15,7 @@
 module Routes.Deck where
 
 import Data.Proxy
+import Data.Maybe (fromMaybe)
 import Servant (type (:<|>) (..), ServerError(..), err404, err401, type (:>), ReqBody, JSON, QueryParam, Post, Get, Patch, Capture)
 import Servant.Auth.Server (AuthResult(..), throwAll)
 import Control.Monad.Reader
@@ -28,17 +29,19 @@ import Models.User (User(..))
 import Repo.Deck
 import Models.Card (Card, CardQuery, PagedCards)
 
-type API = 
+type API =
   "deck" :> "search" :> "full" :> QueryParam "query" String :> Get '[JSON] [Deck]
   :<|> "deck" :> "search" :> "instant" :> QueryParam "query" String :> Get '[JSON] [Deck]
   :<|> "deck" :> Capture "id" Integer :> Get '[JSON] Deck
   :<|> "deck" :> "cards" :> ReqBody '[JSON] CardQuery :> Post '[JSON] PagedCards
+  :<|> "deck" :> Capture "user_deck_id" String :> "continuations" :> QueryParam "prefix" String :> Get '[JSON] [String]
 
-type Server = 
+type Server =
   (Maybe String -> AppM [Deck])
   :<|> (Maybe String -> AppM [Deck])
   :<|> (Integer -> AppM Deck)
   :<|> (CardQuery -> AppM PagedCards)
+  :<|> (String -> Maybe String -> AppM [String])
 
 own :: AuthenticatedUser -> Deck -> Deck
 own user deck = deck {author = user.username}
@@ -47,8 +50,9 @@ setId :: Integer -> Deck -> Deck
 setId id deck = deck { deckId = id }
 
 server :: Server
-server = 
+server =
   Repo.Deck.search
   :<|> Repo.Deck.searchInstant
   :<|> Repo.Deck.find
-  :<|> Repo.Deck.listCardsOfDeck 
+  :<|> Repo.Deck.listCardsOfDeck
+  :<|> (\deckId mPrefix -> Repo.Deck.listContinuations deckId (fromMaybe "" mPrefix))

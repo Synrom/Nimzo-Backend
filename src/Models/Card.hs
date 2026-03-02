@@ -12,7 +12,8 @@ import Data.Time (UTCTime)
 data CardQuery = CardQuery
   { cursor :: Maybe String,
     limit  :: Integer,
-    deckId :: Integer
+    deckId :: Integer,
+    prefix :: Maybe String
   }
   deriving (Eq, Show, Generic)
 

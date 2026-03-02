@@ -93,16 +93,42 @@ paginateCards pendingCards = case safeLast pendingCards of
     cards = map unpend pendingCards
     
 
+listContinuations :: MonadDB m => String -> String -> m [String]
+listContinuations userDeckId prefix
+  | null prefix = map fromOnly <$> runQuery emptyQuery (Only userDeckId)
+  | otherwise   = map fromOnly <$> runQuery prefixQuery (length prefix, userDeckId, prefix)
+  where
+    emptyQuery :: Query
+    emptyQuery =
+      "SELECT DISTINCT split_part(moves, ' ', 1) \
+      \FROM user_card_views \
+      \WHERE user_deck_id = ? \
+      \AND moves != '' \
+      \ORDER BY split_part(moves, ' ', 1)"
+    prefixQuery :: Query
+    prefixQuery =
+      "SELECT next_move FROM ( \
+        \SELECT DISTINCT split_part(substring(moves from ? + 2), ' ', 1) AS next_move \
+        \FROM user_card_views \
+        \WHERE user_deck_id = ? \
+        \AND moves LIKE ? || ' %' \
+      \) sub \
+      \WHERE next_move != '' \
+      \ORDER BY next_move"
+
 listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
 listCardsOfDeck rawQuery = do
   let cardQuery = rawQuery { limit = min 100 rawQuery.limit }
   deck <- find cardQuery.deckId
-  let finalParams = [toField deck.user_deck_id] <> params <> [toField cardQuery.limit]
+  let finalParams = [toField deck.user_deck_id] <> cursorParams <> prefixParams <> [toField cardQuery.limit]
   paginateCards <$> runQuery finalSql finalParams
   where
   fields = " moves, title, color, id "
   baseSql = "SELECT" <> fields <> "FROM user_card_views WHERE user_deck_id=?"
-  (condition, params) = case rawQuery.cursor of
+  (cursorCondition, cursorParams) = case rawQuery.cursor of
     Nothing   -> ("", [])
     Just next -> (" AND id > ?", [toField next])
-  finalSql = baseSql <> condition <> " ORDER BY id LIMIT ?"
+  (prefixCondition, prefixParams) = case rawQuery.prefix of
+    Nothing -> ("", [])
+    Just p  -> (" AND (moves = ? OR moves LIKE ? || ' %')", [toField p, toField p])
+  finalSql = baseSql <> cursorCondition <> prefixCondition <> " ORDER BY id LIMIT ?"

@@ -80,3 +80,6 @@ ALTER TABLE decks ADD COLUMN search_vector_name tsvector
     to_tsvector('english', name)
   ) STORED;
 CREATE INDEX decks_search_vector_name_idx ON decks USING GIN (search_vector_name);
+
+-- Supports efficient prefix search on moves for the continuations endpoint
+CREATE INDEX user_card_views_deck_moves_idx ON user_card_views (user_deck_id, moves varchar_pattern_ops);
