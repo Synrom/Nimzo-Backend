@@ -4,17 +4,17 @@
 
 module Repo.Deck where
 
-import Database.PostgreSQL.Simple (Only(..), Query)
+import Database.PostgreSQL.Simple (Only(..), Query, fromOnly)
+import Database.PostgreSQL.Simple.ToField (Action, ToField(toField))
 import Data.String (fromString)
 import Data.String.HT (trim)
 import Control.Monad
 import Repo.Classes
 import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast)
-import Models.Deck (Deck(..))
+import Models.Deck (Deck(..), SearchContinuation(..), SearchContinuationDeck(..), SearchContinuationsResponse(..))
 import Models.User (User(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.Card (CardQuery(..), Card(..), PagedCards (..), PendingCard (..))
-import Database.PostgreSQL.Simple.ToField (ToField(toField))
 
 returnFields :: Query
 returnFields = " id, name, is_public, description, num_cards_total, author, user_deck_id "
@@ -91,30 +91,107 @@ paginateCards pendingCards = case safeLast pendingCards of
   where
     unpend (PendingCard moves title color _) = Card moves title color
     cards = map unpend pendingCards
-    
+
+buildContinuationQuery :: Query -> Query -> [Action] -> String -> (Query, [Action])
+buildContinuationQuery sourceSql movesExpr baseParams prefix
+  | null prefix =
+      ( "SELECT DISTINCT split_part(" <> movesExpr <> ", ' ', 1) "
+        <> sourceSql
+        <> " AND " <> movesExpr <> " != '' "
+        <> "ORDER BY split_part(" <> movesExpr <> ", ' ', 1)"
+      , baseParams
+      )
+  | otherwise =
+      ( "SELECT next_move FROM ( "
+        <> "SELECT DISTINCT split_part(substring(" <> movesExpr <> " from ? + 2), ' ', 1) AS next_move "
+        <> sourceSql
+        <> " AND " <> movesExpr <> " LIKE ? || ' %' "
+        <> ") sub "
+        <> "WHERE next_move != '' "
+        <> "ORDER BY next_move"
+      , [toField $ length prefix] <> baseParams <> [toField prefix]
+      )
+
+buildSearchContinuationsQuery :: Query -> Query -> String -> Maybe Integer -> (Query, [Action])
+buildSearchContinuationsQuery sourceSql movesExpr prefix mLimit =
+  (baseSql <> limitSql, baseParams <> limitParams)
+  where
+    (baseSql, baseParams)
+      | null prefix =
+          ( "SELECT split_part(" <> movesExpr <> ", ' ', 1) AS move, COUNT(*) AS nr_cards "
+            <> sourceSql
+            <> " AND " <> movesExpr <> " != '' "
+            <> "GROUP BY move "
+            <> "ORDER BY nr_cards DESC, move"
+          , []
+          )
+      | otherwise =
+          ( "SELECT next_move AS move, COUNT(*) AS nr_cards FROM ( "
+            <> "SELECT split_part(substring(" <> movesExpr <> " from ? + 2), ' ', 1) AS next_move "
+            <> sourceSql
+            <> " AND " <> movesExpr <> " LIKE ? || ' %' "
+            <> ") sub "
+            <> "WHERE next_move != '' "
+            <> "GROUP BY next_move "
+            <> "ORDER BY nr_cards DESC, next_move"
+          , [toField $ length prefix, toField prefix]
+          )
+    limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
+    limitSql
+      | null limitParams = ""
+      | otherwise = " LIMIT ?"
+
+buildDeckCountsQuery :: String -> Maybe Integer -> (Query, [Action])
+buildDeckCountsQuery prefix mLimit =
+  ( baseSql <> prefixSql <> orderSql <> limitSql
+  , prefixParams <> limitParams
+  )
+  where
+    baseSql =
+      "SELECT d.name, COUNT(*) AS nr_cards \
+      \FROM user_card_views ucv \
+      \JOIN decks d ON d.user_deck_id = ucv.user_deck_id \
+      \WHERE d.is_public = TRUE"
+    (prefixSql, prefixParams)
+      | null prefix = ("", [])
+      | otherwise =
+          ( " AND (ucv.moves = ? OR ucv.moves LIKE ? || ' %')"
+          , [toField prefix, toField prefix]
+          )
+    orderSql =
+      " GROUP BY d.id, d.name \
+      \ORDER BY nr_cards DESC, d.name"
+    limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
+    limitSql
+      | null limitParams = ""
+      | otherwise = " LIMIT ?"
+
+normalizeLimit :: Maybe Integer -> Maybe Integer
+normalizeLimit = fmap (max 0)
 
 listContinuations :: MonadDB m => String -> String -> m [String]
 listContinuations userDeckId prefix
-  | null prefix = map fromOnly <$> runQuery emptyQuery (Only userDeckId)
-  | otherwise   = map fromOnly <$> runQuery prefixQuery (length prefix, userDeckId, prefix)
+  = map fromOnly <$> runQuery sql params
   where
-    emptyQuery :: Query
-    emptyQuery =
-      "SELECT DISTINCT split_part(moves, ' ', 1) \
-      \FROM user_card_views \
-      \WHERE user_deck_id = ? \
-      \AND moves != '' \
-      \ORDER BY split_part(moves, ' ', 1)"
-    prefixQuery :: Query
-    prefixQuery =
-      "SELECT next_move FROM ( \
-        \SELECT DISTINCT split_part(substring(moves from ? + 2), ' ', 1) AS next_move \
-        \FROM user_card_views \
-        \WHERE user_deck_id = ? \
-        \AND moves LIKE ? || ' %' \
-      \) sub \
-      \WHERE next_move != '' \
-      \ORDER BY next_move"
+    (sql, params) =
+      buildContinuationQuery
+        "FROM user_card_views WHERE user_deck_id = ?"
+        "moves"
+        [toField userDeckId]
+        prefix
+
+searchContinuations :: MonadDB m => String -> Maybe Integer -> Maybe Integer -> m SearchContinuationsResponse
+searchContinuations prefix mDeckLimit mContinuationLimit = SearchContinuationsResponse
+  <$> runQuery continuationSql continuationParams
+  <*> runQuery decksSql decksParams
+  where
+    (continuationSql, continuationParams) =
+      buildSearchContinuationsQuery
+        "FROM user_card_views ucv JOIN decks d ON d.user_deck_id = ucv.user_deck_id WHERE d.is_public = TRUE"
+        "ucv.moves"
+        prefix
+        mContinuationLimit
+    (decksSql, decksParams) = buildDeckCountsQuery prefix mDeckLimit
 
 listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
 listCardsOfDeck rawQuery = do

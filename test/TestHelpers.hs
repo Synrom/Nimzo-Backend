@@ -58,9 +58,27 @@ cleanTestDb conn = do
   _ <- execute_ conn "DELETE FROM users"
   return ()
 
+ensureTestSchema :: Connection -> IO ()
+ensureTestSchema conn = do
+  _ <- execute_ conn
+    "ALTER TABLE decks \
+    \ADD COLUMN IF NOT EXISTS search_vector tsvector \
+    \GENERATED ALWAYS AS ( \
+    \  setweight(to_tsvector('english', coalesce(name, '')), 'A') || \
+    \  setweight(to_tsvector('english', coalesce(description, '')), 'B') \
+    \) STORED"
+  _ <- execute_ conn "CREATE INDEX IF NOT EXISTS decks_search_vector_idx ON decks USING GIN (search_vector)"
+  _ <- execute_ conn
+    "ALTER TABLE decks \
+    \ADD COLUMN IF NOT EXISTS search_vector_name tsvector \
+    \GENERATED ALWAYS AS (to_tsvector('english', name)) STORED"
+  _ <- execute_ conn "CREATE INDEX IF NOT EXISTS decks_search_vector_name_idx ON decks USING GIN (search_vector_name)"
+  return ()
+
 -- | Run a test with a clean database
 withCleanDb :: (Connection -> IO a) -> IO a
 withCleanDb action = withTestDb $ \conn -> do
+  ensureTestSchema conn
   cleanTestDb conn
   action conn
 
