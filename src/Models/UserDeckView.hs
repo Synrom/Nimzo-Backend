@@ -18,6 +18,7 @@ data UserDeckView = UserDeckView
     name :: String,
     isPublic :: Bool,
     description :: String,
+    color :: Maybe String,
     numCardsTotal :: Integer
   }
   deriving (Eq, Show, Generic)

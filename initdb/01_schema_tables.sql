@@ -23,6 +23,7 @@ CREATE TABLE user_deck_views (
   name VARCHAR(250) NOT NULL,
   is_public BOOLEAN NOT NULL,
   description VARCHAR(500),
+  color VARCHAR(2),
   num_cards_total INTEGER NOT NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -47,6 +48,7 @@ CREATE TABLE decks (
   user_deck_id VARCHAR(250) NOT NULL UNIQUE REFERENCES user_deck_views(id),
   is_public BOOLEAN NOT NULL DEFAULT FALSE,
   description VARCHAR(500),
+  color VARCHAR(2),
   author VARCHAR(250) NOT NULL REFERENCES users(username),
   num_cards_total INTEGER NOT NULL DEFAULT 0,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

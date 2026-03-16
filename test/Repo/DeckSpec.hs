@@ -14,6 +14,7 @@ import Repo.Deck
 import Repo.User
 import Repo.Classes (execute)
 import Models.Deck
+import Models.DeckSearch
 import Models.User
 import Models.Card
 
@@ -66,6 +67,7 @@ spec = describe "Repo.Deck" $ do
         inserted.name `shouldBe` "Test Deck"
         inserted.author `shouldBe` "deckauthor"
         inserted.user_deck_id `shouldBe` "udv_test1"
+        inserted.color `shouldBe` Nothing
         Models.Deck.deckId inserted `shouldSatisfy` (> 0)
 
     it "updates an existing deck on conflict" $ do
@@ -86,6 +88,25 @@ spec = describe "Repo.Deck" $ do
 
         updated.name `shouldBe` "Updated Name"
         Models.Deck.deckId updated `shouldBe` Models.Deck.deckId inserted
+
+    it "preserves an existing color when an old client omits it on update" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "colorauthor" "color@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, color) VALUES (?, ?, ?, ?, ?, ?)"
+            ("udv_color" :: String, "colorauthor" :: String, "Original" :: String, True, 5 :: Integer, "wh" :: String)
+          return ()
+
+        let deck1 = (mkTestDeck 0 "Original Name" "colorauthor" "udv_color") { Models.Deck.color = Just "wh" }
+        inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck1)
+
+        let deck2 = mkTestDeck 0 "Updated Name" "colorauthor" "udv_color"
+        updated <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck2)
+
+        inserted.color `shouldBe` Just "wh"
+        updated.color `shouldBe` Just "wh"
 
   describe "search" $ do
     it "returns empty list when query is Nothing" $ do
@@ -269,10 +290,8 @@ spec = describe "Repo.Deck" $ do
           , SearchContinuation "c5" 1
           , SearchContinuation "e6" 1
           ]
-        decks response `shouldBe`
-          [ SearchContinuationDeck "French" 2
-          , SearchContinuationDeck "Sicilian" 2
-          ]
+        map (.name) (decks response) `shouldBe` ["French", "Sicilian"]
+        map (.isPublic) (decks response) `shouldBe` [True, True]
 
     it "counts exact matches and prefix matches, but only yields continuations after the prefix" $ do
       withCleanDb $ \conn -> do
@@ -293,7 +312,7 @@ spec = describe "Repo.Deck" $ do
           [ SearchContinuation "Nc3" 1
           , SearchContinuation "Nf3" 1
           ]
-        decks response `shouldBe` [SearchContinuationDeck "Exact Prefix Deck" 3]
+        map (.name) (decks response) `shouldBe` ["Exact Prefix Deck"]
 
     it "limits only the deck list when limitDecks is set" $ do
       withCleanDb $ \conn -> do
@@ -322,7 +341,7 @@ spec = describe "Repo.Deck" $ do
           , SearchContinuation "e6" 1
           , SearchContinuation "g6" 1
           ]
-        decks response `shouldBe` [SearchContinuationDeck "Alpha" 3]
+        map (.name) (decks response) `shouldBe` ["Alpha"]
 
     it "limits continuations independently when limitContinuations is set" $ do
       withCleanDb $ \conn -> do
@@ -343,10 +362,7 @@ spec = describe "Repo.Deck" $ do
           [ SearchContinuation "e5" 3
           , SearchContinuation "c5" 1
           ]
-        decks response `shouldBe`
-          [ SearchContinuationDeck "Move Alpha" 3
-          , SearchContinuationDeck "Move Beta" 2
-          ]
+        map (.name) (decks response) `shouldBe` ["Move Alpha", "Move Beta"]
 
     it "treats non-positive limits as returning no rows for that section" $ do
       withCleanDb $ \conn -> do

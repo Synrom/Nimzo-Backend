@@ -11,25 +11,30 @@ import Data.String.HT (trim)
 import Control.Monad
 import Repo.Classes
 import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast)
-import Models.Deck (Deck(..), SearchContinuation(..), SearchContinuationDeck(..), SearchContinuationsResponse(..))
+import Models.Deck (Deck(..))
+import Models.DeckSearch (SearchContinuation(..), SearchContinuationsResponse(..))
 import Models.User (User(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.Card (CardQuery(..), Card(..), PagedCards (..), PendingCard (..))
 
 returnFields :: Query
-returnFields = " id, name, is_public, description, num_cards_total, author, user_deck_id "
+returnFields = " id, name, is_public, description, color, num_cards_total, author, user_deck_id "
+
+qualifiedReturnFields :: Query
+qualifiedReturnFields = " d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id "
 
 insertOrUpdate :: MonadDB m => Deck -> m Deck
 insertOrUpdate deck = let
   query :: Query
   query = 
-    "INSERT INTO decks (name, is_public, description, \
-    \num_cards_total, author, user_deck_id) VALUES (?, ?, ?, ?, ?, ?) \
+    "INSERT INTO decks (name, is_public, description, color, \
+    \num_cards_total, author, user_deck_id) VALUES (?, ?, ?, ?, ?, ?, ?) \
     \ON CONFLICT (user_deck_id) \
     \DO UPDATE SET \
     \ name = EXCLUDED.name \
     \, is_public = EXCLUDED.is_public \
     \, description = EXCLUDED.description \
+    \, color = COALESCE(EXCLUDED.color, decks.color) \
     \, author = EXCLUDED.author \
     \, num_cards_total = EXCLUDED.num_cards_total \
     \, last_modified = CURRENT_TIMESTAMP \
@@ -38,7 +43,7 @@ insertOrUpdate deck = let
   in
     one =<< runQuery 
       query 
-      (deck.name, deck.isPublic, deck.description, deck.numCardsTotal, deck.author, deck.user_deck_id)
+      (deck.name, deck.isPublic, deck.description, deck.color, deck.numCardsTotal, deck.author, deck.user_deck_id)
 
 searchInstant :: MonadDB m => Maybe String -> m [Deck]
 searchInstant Nothing = return []
@@ -141,15 +146,15 @@ buildSearchContinuationsQuery sourceSql movesExpr prefix mLimit =
       | null limitParams = ""
       | otherwise = " LIMIT ?"
 
-buildDeckCountsQuery :: String -> Maybe Integer -> (Query, [Action])
-buildDeckCountsQuery prefix mLimit =
+buildDecksQuery :: String -> Maybe Integer -> (Query, [Action])
+buildDecksQuery prefix mLimit =
   ( baseSql <> prefixSql <> orderSql <> limitSql
   , prefixParams <> limitParams
   )
   where
     baseSql =
-      "SELECT d.name, COUNT(*) AS nr_cards \
-      \FROM user_card_views ucv \
+      "SELECT" <> qualifiedReturnFields <>
+      "FROM user_card_views ucv \
       \JOIN decks d ON d.user_deck_id = ucv.user_deck_id \
       \WHERE d.is_public = TRUE"
     (prefixSql, prefixParams)
@@ -159,8 +164,8 @@ buildDeckCountsQuery prefix mLimit =
           , [toField prefix, toField prefix]
           )
     orderSql =
-      " GROUP BY d.id, d.name \
-      \ORDER BY nr_cards DESC, d.name"
+      " GROUP BY d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id \
+      \ORDER BY COUNT(*) DESC, d.name"
     limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
     limitSql
       | null limitParams = ""
@@ -191,7 +196,7 @@ searchContinuations prefix mDeckLimit mContinuationLimit = SearchContinuationsRe
         "ucv.moves"
         prefix
         mContinuationLimit
-    (decksSql, decksParams) = buildDeckCountsQuery prefix mDeckLimit
+    (decksSql, decksParams) = buildDecksQuery prefix mDeckLimit
 
 listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
 listCardsOfDeck rawQuery = do

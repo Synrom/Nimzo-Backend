@@ -24,7 +24,8 @@ import App.AppM
 import App.Env
 import App.Error
 import App.Auth (AuthenticatedUser(..))
-import Models.Deck (Deck(..), SearchContinuationsResponse)
+import Models.Deck (Deck(..))
+import Models.DeckSearch (SearchContinuationsResponse)
 import Models.User (User(..))
 import Repo.Deck
 import Models.Card (Card, CardQuery, PagedCards)

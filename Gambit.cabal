@@ -21,6 +21,7 @@ library
   exposed-modules:
       Models.User, 
       Models.Deck, 
+      Models.DeckSearch,
       Models.Card, 
       Models.Rank, 
       Models.UserCardView,

@@ -12,10 +12,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Routes.Watermelon where
 
 import Data.Proxy
+import Data.Aeson (Value, object, (.=), toJSON)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds, getPOSIXTime)
 import Servant (type (:<|>) (..), ServerError(..), err404, err401, type (:>), ReqBody, JSON, QueryParam, Post, Get, Patch, Capture)
@@ -40,11 +42,11 @@ import Models.User (User(..))
 import Repo.Xp (calcXp)
 
 type API = 
-  "changes" :> "pull" :> ReqBody '[JSON] PullParams :> Post '[JSON] ChangesResponse
+  "changes" :> "pull" :> ReqBody '[JSON] PullParams :> Post '[JSON] Value
   :<|> "changes" :> "push" :> ReqBody '[JSON] PushParams :> Post '[JSON] Success
 
 type Server = 
-  (PullParams -> AppM ChangesResponse)
+  (PullParams -> AppM Value)
   :<|> (PushParams -> AppM Success)
 
 intToTime :: Integer -> UTCTime
@@ -62,6 +64,28 @@ mkChangesFor
   -> m (TableChanges a)
 mkChangesFor created updated deleted t =
   TableChanges <$> created t <*> updated t <*> deleted t
+
+mkLegacyUserDeckViewChanges :: TableChanges UserDeckView -> Value
+mkLegacyUserDeckViewChanges changes = object
+  [ "created" .= map legacyUserDeckView changes.created
+  , "updated" .= map legacyUserDeckView changes.updated
+  , "deleted" .= changes.deleted
+  ]
+
+mkLegacyChanges :: Changes -> Value
+mkLegacyChanges changes = object
+  [ "user_card_views" .= changes.user_card_views
+  , "user_deck_views" .= mkLegacyUserDeckViewChanges changes.user_deck_views
+  ]
+
+toPullPayload :: Integer -> ChangesResponse -> Value
+toPullPayload schemaVersion response
+  | schemaVersion >= 2 = toJSON response
+  | otherwise =
+      object
+        [ "changes" .= mkLegacyChanges response.changes
+        , "timestamp" .= response.timestamp
+        ]
 
 pullRoute :: String -> PullParams -> AppM ChangesResponse
 pullRoute username PullParams {lastPulledAt } = do
@@ -81,6 +105,25 @@ pullRoute username PullParams {lastPulledAt } = do
     { changes   = Changes { user_card_views = changesUcv, user_deck_views = changesUdv }
     , timestamp = now
     }
+
+legacyUserDeckView :: UserDeckView -> Value
+legacyUserDeckView deck = object
+  [ "num_cards_today" .= deck.numCardsToday
+  , "cards_per_day" .= deck.cardsPerDay
+  , "num_cards_learnt" .= deck.numCardsLearnt
+  , "is_author" .= deck.isAuthor
+  , "user_id" .= deck.userId
+  , "id" .= deck.udvId
+  , "name" .= deck.name
+  , "is_public" .= deck.isPublic
+  , "description" .= deck.description
+  , "num_cards_total" .= deck.numCardsTotal
+  ]
+
+pullRouteVersioned :: String -> PullParams -> AppM Value
+pullRouteVersioned username params = do
+  response <- pullRoute username params
+  pure $ toPullPayload params.schemaVersion response
 
 mergeError :: AppError
 mergeError = MergeConflict "Modified objects after last pull."
@@ -155,6 +198,6 @@ pushRoute user PushParams {lastPulledAt, changes} = do
 
 server :: AuthResult AuthenticatedUser -> Server
 server (Authenticated user) = 
-  pullRoute user.username
+  pullRouteVersioned user.username
   :<|> pushRoute user
 server _ = throwAppError $ Unauthorized "No access."

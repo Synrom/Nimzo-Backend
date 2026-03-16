@@ -7,6 +7,10 @@
 module Routes.WatermelonSpec (spec) where
 
 import Test.Hspec
+import Data.Aeson (Value(..))
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.KeyMap as KeyMap
+import Data.String (fromString)
 import Data.Time (getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad (forM_)
@@ -34,6 +38,30 @@ isLeft' :: Either a b -> Bool
 isLeft' (Left _) = True
 isLeft' _ = False
 
+expectPullResponse :: Either AppError Value -> IO ChangesResponse
+expectPullResponse result = do
+  value <- expectRight result
+  case Aeson.fromJSON value of
+    Aeson.Success response -> pure response
+    Aeson.Error err -> error $ "Expected valid pull response JSON but got: " ++ err
+
+expectObjectField :: String -> KeyMap.KeyMap Value -> IO Value
+expectObjectField key obj =
+  expectJust (KeyMap.lookup (fromString key) obj)
+
+expectCreatedUserDeckObject :: Value -> IO (KeyMap.KeyMap Value)
+expectCreatedUserDeckObject value = do
+  let Object root = value
+  changesValue <- expectObjectField "changes" root
+  let Object changesObj = changesValue
+  decksValue <- expectObjectField "user_deck_views" changesObj
+  let Object decksObj = decksValue
+  createdValue <- expectObjectField "created" decksObj
+  case Aeson.fromJSON createdValue of
+    Aeson.Success [Object firstDeck] -> pure firstDeck
+    Aeson.Success (_ :: [Value]) -> error "Expected exactly one created deck entry"
+    Aeson.Error err -> error $ "Expected created deck array but got: " ++ err
+
 spec :: Spec
 spec = describe "Routes.Watermelon" $ do
 
@@ -44,8 +72,8 @@ spec = describe "Routes.Watermelon" $ do
         _ <- runTestApp conn $ Repo.User.insert user
 
         let params = PullParams Nothing 1 Nothing
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "pulluser" params
-        response <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "pulluser" params
+        response <- expectPullResponse result
 
         timestamp response `shouldSatisfy` (> 0)
         created response.changes.user_deck_views `shouldBe` []
@@ -63,8 +91,8 @@ spec = describe "Routes.Watermelon" $ do
         _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
 
         let params = PullParams Nothing 1 Nothing
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "pulluser2" params
-        response <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "pulluser2" params
+        response <- expectPullResponse result
 
         length response.changes.user_deck_views.created `shouldBe` 1
         let deck = head response.changes.user_deck_views.created
@@ -89,12 +117,40 @@ spec = describe "Routes.Watermelon" $ do
         let recentPast = floor $ utcTimeToPOSIXSeconds now - 60 -- 60 seconds ago
         let params = PullParams (Just recentPast) 1 Nothing
 
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "pulluser3" params
-        response <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "pulluser3" params
+        response <- expectPullResponse result
 
         length response.changes.user_deck_views.created `shouldBe` 1
         let deck = head response.changes.user_deck_views.created
         name deck `shouldBe` "New Deck"
+
+    it "omits color from pulled deck entries for schema version 1" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pulllegacy" "pulllegacy@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        now <- getCurrentTime
+
+        let deck = (mkTestUserDeckView "udv_legacy" "pulllegacy" "Legacy Deck")
+              { Models.color = Just "w" }
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
+
+        value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pulllegacy" (PullParams Nothing 1 Nothing))
+        firstDeck <- expectCreatedUserDeckObject value
+        KeyMap.lookup "color" firstDeck `shouldBe` Nothing
+
+    it "includes color in pulled deck entries for schema version 2" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pullmodern" "pullmodern@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        now <- getCurrentTime
+
+        let deck = (mkTestUserDeckView "udv_modern" "pullmodern" "Modern Deck")
+              { Models.color = Just "w" }
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
+
+        value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullmodern" (PullParams Nothing 2 Nothing))
+        firstDeck <- expectCreatedUserDeckObject value
+        KeyMap.lookup "color" firstDeck `shouldSatisfy` (/= Nothing)
 
   describe "pushRoute" $ do
     it "successfully pushes new user deck views" $ do
@@ -180,22 +236,51 @@ spec = describe "Routes.Watermelon" $ do
 
         -- Verify deck was updated
         -- We only get the update if we pull from before lastPulled
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "updateuser" $ mkTestPullParams between
-        response <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "updateuser" $ mkTestPullParams between
+        response <- expectPullResponse result
         length response.changes.user_deck_views.updated `shouldSatisfy` (== 1)
         length response.changes.user_deck_views.created `shouldSatisfy` (== 0)
 
         -- If we pull from lastPulled, we don't get any updates nor creations
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "updateuser" $ mkTestPullParams after
-        response <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "updateuser" $ mkTestPullParams after
+        response <- expectPullResponse result
         length response.changes.user_deck_views.updated `shouldSatisfy` (== 0)
         length response.changes.user_deck_views.created `shouldSatisfy` (== 0)
 
         -- If we pull from minTime, we don't get any updates, but one creation
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "updateuser" $ mkTestPullParams before
-        response <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "updateuser" $ mkTestPullParams before
+        response <- expectPullResponse result
         length response.changes.user_deck_views.updated `shouldSatisfy` (== 0)
         length response.changes.user_deck_views.created `shouldSatisfy` (== 1)
+
+    it "preserves deck color when an older client updates without the new field" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "compatuser" "compat@example.com" "password"
+        now <- getCurrentTime
+        _ <- runTestApp conn $ Repo.User.insert user
+        let originalCreatedAt = intToTime $ floor (utcTimeToPOSIXSeconds now) - 20
+        let lastPulled = floor $ utcTimeToPOSIXSeconds now - 10
+
+        let originalDeck = (mkTestUserDeckView "deck_compat" "compatuser" "Original Name")
+              { Models.color = Just "wh" }
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate originalCreatedAt originalDeck
+
+        let updatedDeck = (mkTestUserDeckView "deck_compat" "compatuser" "Updated Name")
+              { Models.numCardsTotal = 10
+              , Models.color = Nothing
+              }
+        let changeSet = Changes { user_card_views = TableChanges [] [] [], user_deck_views = TableChanges [] [updatedDeck] [] }
+        let pushParams = PushParams lastPulled changeSet
+        let authUser = AUser "compatuser" False now
+
+        result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
+        success <- expectRight result
+        success.msg `shouldBe` "Synched successfully."
+
+        let afterOriginalCreation = intToTime $ floor (utcTimeToPOSIXSeconds originalCreatedAt) + 1
+        pulled <- runTestApp conn $ Repo.UserDeckView.updatedSince "compatuser" (Just afterOriginalCreation)
+        [storedDeck] <- expectRight pulled
+        storedDeck.color `shouldBe` Just "wh"
 
     it "handles deleted items" $ do
       withCleanDb $ \conn -> do
@@ -226,8 +311,8 @@ spec = describe "Routes.Watermelon" $ do
         success.msg `shouldBe` "Synched successfully."
 
         let pullParams = mkTestPullParams $ intToTime betweenCreationAndDeletionTime
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "deleteuser" pullParams
-        success <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "deleteuser" pullParams
+        success <- expectPullResponse result
 
         success.changes.user_deck_views.deleted `shouldContain` ["delete_deck"]
         success.changes.user_card_views.deleted `shouldContain` ["card1"]
@@ -260,8 +345,8 @@ spec = describe "Routes.Watermelon" $ do
         success.msg `shouldBe` "Synched successfully."
 
         let pullParams = mkTestPullParams $ intToTime beforeCreation
-        result <- runTestApp conn $ Routes.Watermelon.pullRoute "deleteuser" pullParams
-        success <- expectRight result
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "deleteuser" pullParams
+        success <- expectPullResponse result
 
         length success.changes.user_deck_views.deleted `shouldBe` 0
         length success.changes.user_card_views.deleted `shouldBe` 0
@@ -361,7 +446,7 @@ spec = describe "Routes.Watermelon" $ do
           let (pullHandler :<|> _) = Routes.Watermelon.server authResult
           pullHandler params
 
-        response <- expectRight result
+        response <- expectPullResponse result
         timestamp response `shouldSatisfy` (> 0)
 
     it "denies unauthenticated users" $ do

@@ -60,6 +60,8 @@ cleanTestDb conn = do
 
 ensureTestSchema :: Connection -> IO ()
 ensureTestSchema conn = do
+  _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
+  _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn
     "ALTER TABLE decks \
     \ADD COLUMN IF NOT EXISTS search_vector tsvector \
@@ -135,6 +137,7 @@ mkTestDeck did dname author userDeckId = Deck
   , Models.Deck.name = dname
   , Models.Deck.isPublic = True
   , Models.Deck.description = "Test deck description"
+  , Models.Deck.color = Nothing
   , Models.Deck.numCardsTotal = 0
   , Models.Deck.author = author
   , Models.Deck.user_deck_id = userDeckId
@@ -152,6 +155,7 @@ mkTestUserDeckView viewId uid deckName = UserDeckView
   , Models.UserDeckView.name = deckName
   , Models.UserDeckView.isPublic = True
   , Models.UserDeckView.description = "Test description"
+  , Models.UserDeckView.color = Nothing
   , Models.UserDeckView.numCardsTotal = 0
   }
 

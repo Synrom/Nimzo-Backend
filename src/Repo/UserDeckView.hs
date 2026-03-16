@@ -19,7 +19,7 @@ import qualified Repo.UserCardView
 import Control.Monad.IO.Class (MonadIO(liftIO))
 
 returnFields :: Query
-returnFields = " num_cards_today, cards_per_day, num_cards_learnt, is_author, user_id, id, name, is_public, description, num_cards_total "
+returnFields = " num_cards_today, cards_per_day, num_cards_learnt, is_author, user_id, id, name, is_public, description, color, num_cards_total "
 
 markString :: String -> String -> String
 markString username id = username ++ id
@@ -75,15 +75,15 @@ insertOrUpdate time unmarked = one =<< runQuery query
     , deck.numCardsToday, deck.isAuthor
     , deck.cardsPerDay, deck.numCardsLearnt
     , deck.name, deck.isPublic, deck.description
-    , deck.numCardsTotal, time, time)
+    , deck.color, deck.numCardsTotal, time, time)
   where
     query :: Query
     query = "INSERT INTO user_deck_views \
     \(id, user_id, num_cards_today, \
     \is_author, cards_per_day, num_cards_learnt, \
-    \ name, is_public, description, num_cards_total, \
+    \ name, is_public, description, color, num_cards_total, \
     \ created_at, last_modified) \
-    \VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) \
+    \VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) \
     \DO UPDATE SET \
     \user_id = EXCLUDED.user_id \
     \, num_cards_today = EXCLUDED.num_cards_today \
@@ -93,6 +93,7 @@ insertOrUpdate time unmarked = one =<< runQuery query
     \, name = EXCLUDED.name \
     \, is_public = EXCLUDED.is_public \
     \, description = EXCLUDED.description \
+    \, color = COALESCE(EXCLUDED.color, user_deck_views.color) \
     \, num_cards_total = EXCLUDED.num_cards_total \
     \, last_modified = EXCLUDED.last_modified \
     \RETURNING" <> returnFields
@@ -118,6 +119,6 @@ authored :: UserDeckView -> Bool
 authored view = view.isAuthor
 
 userDeckToDeck :: UserDeckView -> Deck
-userDeckToDeck unmarked  = Deck 0 name isPublic description numCardsTotal userId udvId
+userDeckToDeck unmarked  = Deck 0 name isPublic description color numCardsTotal userId udvId
   where
-    (UserDeckView numCardsToday cardsPerDay numCardsLearnt isAuthor userId udvId name isPublic description numCardsTotal) = mark unmarked
+    (UserDeckView numCardsToday cardsPerDay numCardsLearnt isAuthor userId udvId name isPublic description color numCardsTotal) = mark unmarked
