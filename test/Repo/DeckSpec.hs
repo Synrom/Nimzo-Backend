@@ -282,7 +282,7 @@ spec = describe "Repo.Deck" $ do
         _ <- insertDeckWithCards conn "searchcontc" "udv_priv" "Caro-Kann" False
           ["e4 c6", "e4 e5 Nf3 Nc6"]
 
-        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing Nothing
+        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing Nothing Nothing
         response <- expectRight result
 
         continuations response `shouldBe`
@@ -305,7 +305,7 @@ spec = describe "Repo.Deck" $ do
           , "e4 c5"
           ]
 
-        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4 e5" Nothing Nothing
+        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4 e5" Nothing Nothing Nothing
         response <- expectRight result
 
         continuations response `shouldBe`
@@ -330,7 +330,7 @@ spec = describe "Repo.Deck" $ do
         _ <- insertDeckWithCards conn "limitcontc" "udv_limit_c" "Gamma" True
           ["e4 g6"]
 
-        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" (Just 1) Nothing
+        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing (Just 1) Nothing
         response <- expectRight result
 
         continuations response `shouldBe`
@@ -355,7 +355,7 @@ spec = describe "Repo.Deck" $ do
         _ <- insertDeckWithCards conn "limitmoveb" "udv_move_b" "Move Beta" True
           ["e4 e5 Nc3", "e4 e6"]
 
-        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing (Just 2)
+        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing Nothing (Just 2)
         response <- expectRight result
 
         continuations response `shouldBe`
@@ -372,12 +372,58 @@ spec = describe "Repo.Deck" $ do
         _ <- insertDeckWithCards conn "zerolimit" "udv_zero" "Zero Limit Deck" True
           ["e4 e5", "e4 c5"]
 
-        zeroResult <- runTestApp conn $ Repo.Deck.searchContinuations "e4" (Just 0) (Just 0)
+        zeroResult <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing (Just 0) (Just 0)
         zeroResponse <- expectRight zeroResult
         continuations zeroResponse `shouldBe` []
         decks zeroResponse `shouldBe` []
 
-        negativeResult <- runTestApp conn $ Repo.Deck.searchContinuations "e4" (Just (-5)) (Just (-5))
+        negativeResult <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing (Just (-5)) (Just (-5))
         negativeResponse <- expectRight negativeResult
         continuations negativeResponse `shouldBe` []
         decks negativeResponse `shouldBe` []
+
+    it "filters continuation search by deck color" $ do
+      withCleanDb $ \conn -> do
+        let whiteUser = mkTestUser "colorwhite" "colorwhite@example.com" "password"
+        let blackUser = mkTestUser "colorblack" "colorblack@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert whiteUser
+        _ <- runTestApp conn $ Repo.User.insert blackUser
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, color) VALUES (?, ?, ?, ?, ?, ?)"
+            ("udv_white" :: String, "colorwhite" :: String, "White Deck" :: String, True, 2 :: Integer, "w" :: String)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, color) VALUES (?, ?, ?, ?, ?, ?)"
+            ("udv_black" :: String, "colorblack" :: String, "Black Deck" :: String, True, 2 :: Integer, "b" :: String)
+          return ()
+
+        let whiteDeck = (mkTestDeck 0 "White Deck" "colorwhite" "udv_white") { Models.Deck.color = Just "w" }
+        let blackDeck = (mkTestDeck 0 "Black Deck" "colorblack" "udv_black") { Models.Deck.color = Just "b" }
+        _ <- runTestApp conn $ Repo.Deck.insertOrUpdate whiteDeck
+        _ <- runTestApp conn $ Repo.Deck.insertOrUpdate blackDeck
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("white_1" :: String, "colorwhite" :: String, "udv_white" :: String, "e4 e5" :: String, "White 1" :: String, "w" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("white_2" :: String, "colorwhite" :: String, "udv_white" :: String, "e4 c5" :: String, "White 2" :: String, "w" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("black_1" :: String, "colorblack" :: String, "udv_black" :: String, "e4 e5" :: String, "Black 1" :: String, "b" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("black_2" :: String, "colorblack" :: String, "udv_black" :: String, "e4 e6" :: String, "Black 2" :: String, "b" :: String, 0 :: Integer)
+          return ()
+
+        whiteResult <- runTestApp conn $ Repo.Deck.searchContinuations "e4" (Just "w") Nothing Nothing
+        whiteResponse <- expectRight whiteResult
+        continuations whiteResponse `shouldBe`
+          [ SearchContinuation "c5" 1
+          , SearchContinuation "e5" 1
+          ]
+        map (.name) (decks whiteResponse) `shouldBe` ["White Deck"]
+
+        blackResult <- runTestApp conn $ Repo.Deck.searchContinuations "e4" (Just "b") Nothing Nothing
+        blackResponse <- expectRight blackResult
+        continuations blackResponse `shouldBe`
+          [ SearchContinuation "e5" 1
+          , SearchContinuation "e6" 1
+          ]
+        map (.name) (decks blackResponse) `shouldBe` ["Black Deck"]

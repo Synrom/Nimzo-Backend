@@ -117,8 +117,8 @@ buildContinuationQuery sourceSql movesExpr baseParams prefix
       , [toField $ length prefix] <> baseParams <> [toField prefix]
       )
 
-buildSearchContinuationsQuery :: Query -> Query -> String -> Maybe Integer -> (Query, [Action])
-buildSearchContinuationsQuery sourceSql movesExpr prefix mLimit =
+buildSearchContinuationsQuery :: Query -> Query -> [Action] -> String -> Maybe Integer -> (Query, [Action])
+buildSearchContinuationsQuery sourceSql movesExpr baseParams prefix mLimit =
   (baseSql <> limitSql, baseParams <> limitParams)
   where
     (baseSql, baseParams)
@@ -128,7 +128,7 @@ buildSearchContinuationsQuery sourceSql movesExpr prefix mLimit =
             <> " AND " <> movesExpr <> " != '' "
             <> "GROUP BY move "
             <> "ORDER BY nr_cards DESC, move"
-          , []
+          , baseParams
           )
       | otherwise =
           ( "SELECT next_move AS move, COUNT(*) AS nr_cards FROM ( "
@@ -139,17 +139,21 @@ buildSearchContinuationsQuery sourceSql movesExpr prefix mLimit =
             <> "WHERE next_move != '' "
             <> "GROUP BY next_move "
             <> "ORDER BY nr_cards DESC, next_move"
-          , [toField $ length prefix, toField prefix]
+          , [toField $ length prefix] <> baseParams <> [toField prefix]
           )
     limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
     limitSql
       | null limitParams = ""
       | otherwise = " LIMIT ?"
 
-buildDecksQuery :: String -> Maybe Integer -> (Query, [Action])
-buildDecksQuery prefix mLimit =
-  ( baseSql <> prefixSql <> orderSql <> limitSql
-  , prefixParams <> limitParams
+buildColorFilter :: Maybe String -> (Query, [Action])
+buildColorFilter Nothing = ("", [])
+buildColorFilter (Just color) = (" AND d.color = ?", [toField color])
+
+buildDecksQuery :: String -> Maybe String -> Maybe Integer -> (Query, [Action])
+buildDecksQuery prefix mColor mLimit =
+  ( baseSql <> colorSql <> prefixSql <> orderSql <> limitSql
+  , colorParams <> prefixParams <> limitParams
   )
   where
     baseSql =
@@ -157,6 +161,7 @@ buildDecksQuery prefix mLimit =
       "FROM user_card_views ucv \
       \JOIN decks d ON d.user_deck_id = ucv.user_deck_id \
       \WHERE d.is_public = TRUE"
+    (colorSql, colorParams) = buildColorFilter mColor
     (prefixSql, prefixParams)
       | null prefix = ("", [])
       | otherwise =
@@ -185,18 +190,20 @@ listContinuations userDeckId prefix
         [toField userDeckId]
         prefix
 
-searchContinuations :: MonadDB m => String -> Maybe Integer -> Maybe Integer -> m SearchContinuationsResponse
-searchContinuations prefix mDeckLimit mContinuationLimit = SearchContinuationsResponse
+searchContinuations :: MonadDB m => String -> Maybe String -> Maybe Integer -> Maybe Integer -> m SearchContinuationsResponse
+searchContinuations prefix mColor mDeckLimit mContinuationLimit = SearchContinuationsResponse
   <$> runQuery continuationSql continuationParams
   <*> runQuery decksSql decksParams
   where
+    (colorSql, colorParams) = buildColorFilter mColor
     (continuationSql, continuationParams) =
       buildSearchContinuationsQuery
-        "FROM user_card_views ucv JOIN decks d ON d.user_deck_id = ucv.user_deck_id WHERE d.is_public = TRUE"
+        ("FROM user_card_views ucv JOIN decks d ON d.user_deck_id = ucv.user_deck_id WHERE d.is_public = TRUE" <> colorSql)
         "ucv.moves"
+        colorParams
         prefix
         mContinuationLimit
-    (decksSql, decksParams) = buildDecksQuery prefix mDeckLimit
+    (decksSql, decksParams) = buildDecksQuery prefix mColor mDeckLimit
 
 listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
 listCardsOfDeck rawQuery = do
