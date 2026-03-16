@@ -84,6 +84,7 @@ library
 executable App
     import:           warnings
     main-is:          Main.hs
+    ghc-options:      -threaded -rtsopts -with-rtsopts=-N
     -- other-modules:
     -- other-extensions:
     build-depends:    servant, 
