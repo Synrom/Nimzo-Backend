@@ -53,6 +53,9 @@ toServerError = \case
   AlreadyExists m -> jsonize err404 m
   MergeConflict m -> jsonize err404 m
 
+logAppError :: AppError -> IO ()
+logAppError appErr = putStrLn $ "[AppError] " ++ show appErr
+
 parsingError :: SqlError -> IO AppError
 parsingError sqlerror = do 
   putStrLn "Failed parsing SqlError"

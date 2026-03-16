@@ -95,6 +95,7 @@ executable App
                       servant-auth-server,
                       safe,
                       warp,
+                      http-types,
                       wai-logger,
                       wai,
                       case-insensitive,
