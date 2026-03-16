@@ -13,11 +13,11 @@ BEGIN
     WHERE users.username = sub.username
     AND users.rank <> sub.new_rank;
 
-    RETURN NEW;
+    RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_update_user_rank
-AFTER INSERT OR UPDATE OF xp ON users
+AFTER INSERT OR UPDATE OF xp OR DELETE ON users
 FOR EACH ROW
 EXECUTE FUNCTION update_user_ranks();
