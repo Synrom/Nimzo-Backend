@@ -118,17 +118,17 @@ buildContinuationQuery sourceSql movesExpr baseParams prefix
       )
 
 buildSearchContinuationsQuery :: Query -> Query -> [Action] -> String -> Maybe Integer -> (Query, [Action])
-buildSearchContinuationsQuery sourceSql movesExpr baseParams prefix mLimit =
-  (baseSql <> limitSql, baseParams <> limitParams)
+buildSearchContinuationsQuery sourceSql movesExpr fixedParams prefix mLimit =
+  (querySql <> limitSql, queryParams <> limitParams)
   where
-    (baseSql, baseParams)
+    (querySql, queryParams)
       | null prefix =
           ( "SELECT split_part(" <> movesExpr <> ", ' ', 1) AS move, COUNT(*) AS nr_cards "
             <> sourceSql
             <> " AND " <> movesExpr <> " != '' "
             <> "GROUP BY move "
             <> "ORDER BY nr_cards DESC, move"
-          , baseParams
+          , fixedParams
           )
       | otherwise =
           ( "SELECT next_move AS move, COUNT(*) AS nr_cards FROM ( "
@@ -139,7 +139,7 @@ buildSearchContinuationsQuery sourceSql movesExpr baseParams prefix mLimit =
             <> "WHERE next_move != '' "
             <> "GROUP BY next_move "
             <> "ORDER BY nr_cards DESC, next_move"
-          , [toField $ length prefix] <> baseParams <> [toField prefix]
+          , [toField $ length prefix] <> fixedParams <> [toField prefix]
           )
     limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
     limitSql

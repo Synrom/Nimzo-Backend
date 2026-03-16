@@ -427,3 +427,35 @@ spec = describe "Repo.Deck" $ do
           , SearchContinuation "e6" 1
           ]
         map (.name) (decks blackResponse) `shouldBe` ["Black Deck"]
+
+    it "filters continuation search by color when no prefix is provided" $ do
+      withCleanDb $ \conn -> do
+        let whiteUser = mkTestUser "noprefixwhite" "noprefixwhite@example.com" "password"
+        let blackUser = mkTestUser "noprefixblack" "noprefixblack@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert whiteUser
+        _ <- runTestApp conn $ Repo.User.insert blackUser
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, color) VALUES (?, ?, ?, ?, ?, ?)"
+            ("udv_np_white" :: String, "noprefixwhite" :: String, "No Prefix White" :: String, True, 1 :: Integer, "w" :: String)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, color) VALUES (?, ?, ?, ?, ?, ?)"
+            ("udv_np_black" :: String, "noprefixblack" :: String, "No Prefix Black" :: String, True, 1 :: Integer, "b" :: String)
+          return ()
+
+        let whiteDeck = (mkTestDeck 0 "No Prefix White" "noprefixwhite" "udv_np_white") { Models.Deck.color = Just "w" }
+        let blackDeck = (mkTestDeck 0 "No Prefix Black" "noprefixblack" "udv_np_black") { Models.Deck.color = Just "b" }
+        _ <- runTestApp conn $ Repo.Deck.insertOrUpdate whiteDeck
+        _ <- runTestApp conn $ Repo.Deck.insertOrUpdate blackDeck
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("np_white" :: String, "noprefixwhite" :: String, "udv_np_white" :: String, "e4" :: String, "NP White" :: String, "w" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("np_black" :: String, "noprefixblack" :: String, "udv_np_black" :: String, "d4" :: String, "NP Black" :: String, "b" :: String, 0 :: Integer)
+          return ()
+
+        result <- runTestApp conn $ Repo.Deck.searchContinuations "" (Just "w") Nothing Nothing
+        response <- expectRight result
+
+        continuations response `shouldBe` [SearchContinuation "e4" 1]
+        map (.name) (decks response) `shouldBe` ["No Prefix White"]
