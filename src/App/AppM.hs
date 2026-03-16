@@ -10,8 +10,8 @@ module App.AppM where
 import Control.Monad.Reader
 import Control.Monad.Error.Class
 import Control.Monad.Except
-import Data.String (fromString)
-import Servant (Handler, ServerError(..), err500)
+import Control.Monad.IO.Class (liftIO)
+import Servant (Handler, throwError)
 import App.Env
 import App.Error
 
@@ -26,4 +26,9 @@ instance ThrowAppError (AppM a) where
 nt :: Env -> AppM a -> Handler a
 nt env (AppM m) = do
   r <- runExceptT (runReaderT m env)
-  either (throwError . toServerError) pure r
+  either
+    (\appErr -> do
+      liftIO $ logAppError appErr
+      throwError $ toServerError appErr)
+    pure
+    r
