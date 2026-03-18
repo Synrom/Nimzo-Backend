@@ -107,13 +107,20 @@ findCardsOfUDV markedId = do
   return $ map fromOnly rows
 
 delete :: MonadDB m => String -> UTCTime -> String -> m ()
-delete username deletedAt id = do 
-  execute "DELETE FROM decks WHERE user_deck_id = ?" (Only $ markString username id)
-  ucv_ids <- findCardsOfUDV $ markString username id
-  mapM_ (Repo.UserCardView.delete username deletedAt . unmarkString username) ucv_ids
-  DatabaseTime createdAt  <- one =<< runQuery "DELETE FROM user_deck_views WHERE id = ? RETURNING created_at" (Only $ markString username id)
-  execute "INSERT INTO deleted_udvs (id, user_id, created_at, deleted_at) VALUES (?, ?, ?, ?)" (markString username id, username, createdAt, deletedAt)
-  return ()
+delete username deletedAt id = do
+  createdRows <- runQuery "SELECT created_at FROM user_deck_views WHERE id = ?" (Only markedId)
+  case createdRows of
+    [] -> pure ()
+    [DatabaseTime createdAt] -> do
+      execute "DELETE FROM decks WHERE user_deck_id = ?" (Only markedId)
+      ucv_ids <- findCardsOfUDV markedId
+      mapM_ (Repo.UserCardView.delete username deletedAt . unmarkString username) ucv_ids
+      execute "DELETE FROM user_deck_views WHERE id = ?" (Only markedId)
+      execute "INSERT INTO deleted_udvs (id, user_id, created_at, deleted_at) VALUES (?, ?, ?, ?)" (markedId, username, createdAt, deletedAt)
+      pure ()
+    _ -> pure ()
+  where
+    markedId = markString username id
 
 authored :: UserDeckView -> Bool
 authored view = view.isAuthor

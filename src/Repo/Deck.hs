@@ -157,7 +157,7 @@ buildDecksQuery prefix mColor mLimit =
   )
   where
     baseSql =
-      "SELECT" <> qualifiedReturnFields <>
+      "SELECT" <> qualifiedReturnFields <> ", COUNT(*) AS nr_cards " <>
       "FROM user_card_views ucv \
       \JOIN decks d ON d.user_deck_id = ucv.user_deck_id \
       \WHERE d.is_public = TRUE"

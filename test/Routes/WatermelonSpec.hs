@@ -351,6 +351,30 @@ spec = describe "Routes.Watermelon" $ do
         length success.changes.user_deck_views.deleted `shouldBe` 0
         length success.changes.user_card_views.deleted `shouldBe` 0
 
+    it "ignores delete ids that do not exist in the backend" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "missingdelete" "missingdelete@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        now <- getCurrentTime
+        let deletedAt = floor $ utcTimeToPOSIXSeconds now
+
+        let deckChanges = TableChanges [] [] ["missing_deck"]
+        let cardChanges = TableChanges [] [] ["missing_card"]
+        let changeSet = Changes { user_card_views = cardChanges, user_deck_views = deckChanges }
+        let pushParams = PushParams deletedAt changeSet
+        let authUser = AUser "missingdelete" False now
+
+        result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
+        success <- expectRight result
+        success.msg `shouldBe` "Synched successfully."
+
+        pullResult <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "missingdelete" (PullParams (Just deletedAt) 2 Nothing)
+        pullResponse <- expectPullResponse pullResult
+
+        pullResponse.changes.user_deck_views.deleted `shouldBe` []
+        pullResponse.changes.user_card_views.deleted `shouldBe` []
+
     it "fails when user tries to modify someone else's data" $ do
       withCleanDb $ \conn -> do
         let user1 = mkTestUser "user1" "user1@example.com" "password"
