@@ -3,6 +3,7 @@ module App.Config where
 import qualified Data.Text as T
 import Configuration.Dotenv (load, parseFile)
 import qualified System.Environment as Env
+import Data.List (dropWhileEnd)
 import Servant.Auth.Server (fromSecret, JWTSettings, defaultJWTSettings)
 import Data.ByteString.Char8 (pack)
 import Data.ByteString (ByteString)
@@ -34,6 +35,37 @@ data MailConfiguration = Google
     change_pwd_link :: String,
     test :: Bool
   } deriving (Show)
+
+data SocialAuthConfiguration = SocialAuthConfiguration
+  { googleClientIds :: [String],
+    appleClientIds :: [String]
+  }
+  deriving (Show)
+
+trim :: String -> String
+trim = dropWhileEnd (== ' ') . dropWhile (== ' ')
+
+splitCsv :: String -> [String]
+splitCsv raw = filter (not . null) $ map trim $ go raw
+  where
+    go [] = [""]
+    go (',' : xs) = "" : go xs
+    go (x : xs) = case go xs of
+      [] -> [[x]]
+      (y : ys) -> (x : y) : ys
+
+loadOptionalCsv :: String -> IO [String]
+loadOptionalCsv name = do
+  values <- parseFile ".env"
+  load False values
+  maybeValue <- Env.lookupEnv name
+  pure $ maybe [] splitCsv maybeValue
+
+loadSocialAuthConfig :: IO SocialAuthConfiguration
+loadSocialAuthConfig = do
+  googleIds <- loadOptionalCsv "GOOGLE_CLIENT_IDS"
+  appleIds <- loadOptionalCsv "APPLE_CLIENT_IDS"
+  pure $ SocialAuthConfiguration googleIds appleIds
 
 loadMailConfig :: IO MailConfiguration
 loadMailConfig = do

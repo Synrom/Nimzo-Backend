@@ -29,6 +29,15 @@ insert user = one =<< runQuery query (user.username, user.password, user.salt, u
     query :: Query
     query = "INSERT INTO users (username, password, salt, email) VALUES (?,?,?,?) RETURNING " <> returnFields
 
+insertSocial :: MonadDB m => String -> T.Text -> T.Text -> String -> m User
+insertSocial username password salt email = one =<< runQuery query (username, password, salt, email)
+  where
+    query :: Query
+    query =
+      "INSERT INTO users (username, password, salt, email, verified) \
+      \VALUES (?, ?, ?, ?, TRUE) RETURNING "
+      <> returnFields
+
 changePwd :: MonadDB m => String -> T.Text -> T.Text -> m ()
 changePwd username salt pwd = void $ execute "UPDATE users SET password = ?, salt = ? WHERE username = ?" (pwd, salt, username)
 
@@ -73,6 +82,12 @@ findUsername name = do
   where
     query :: Query
     query = "SELECT" <> returnFields <> "FROM users WHERE username = ?"
+
+findEmail :: MonadDB m => String -> m (Maybe User)
+findEmail email = listToMaybe <$> runQuery query (Only email)
+  where
+    query :: Query
+    query = "SELECT" <> returnFields <> "FROM users WHERE email = ?"
 
 nextStreakStamp :: User -> IO User
 nextStreakStamp olduser = do

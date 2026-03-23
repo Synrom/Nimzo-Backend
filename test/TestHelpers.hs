@@ -54,6 +54,7 @@ cleanTestDb conn = do
   _ <- execute_ conn "DELETE FROM user_card_views"
   _ <- execute_ conn "DELETE FROM deleted_ucvs"
   _ <- execute_ conn "DELETE FROM deleted_udvs"
+  _ <- execute_ conn "DELETE FROM user_identities"
   _ <- execute_ conn "DELETE FROM user_deck_views"
   _ <- execute_ conn "DELETE FROM users"
   return ()
@@ -75,6 +76,19 @@ ensureTestSchema conn = do
     \ADD COLUMN IF NOT EXISTS search_vector_name tsvector \
     \GENERATED ALWAYS AS (to_tsvector('english', name)) STORED"
   _ <- execute_ conn "CREATE INDEX IF NOT EXISTS decks_search_vector_name_idx ON decks USING GIN (search_vector_name)"
+  _ <- execute_ conn
+    "CREATE TABLE IF NOT EXISTS user_identities (\
+    \ id SERIAL PRIMARY KEY,\
+    \ username VARCHAR(250) NOT NULL REFERENCES users(username) ON DELETE CASCADE,\
+    \ provider VARCHAR(20) NOT NULL,\
+    \ provider_subject VARCHAR(255) NOT NULL,\
+    \ email VARCHAR(250),\
+    \ email_verified BOOLEAN NOT NULL DEFAULT FALSE,\
+    \ created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,\
+    \ last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,\
+    \ UNIQUE (provider, provider_subject)\
+    \)"
+  _ <- execute_ conn "CREATE INDEX IF NOT EXISTS user_identities_username_idx ON user_identities(username)"
   return ()
 
 -- | Run a test with a clean database
@@ -90,7 +104,8 @@ mkTestEnv conn = do
   jwtKey <- generateKey
   let jwtCfg = defaultJWTSettings jwtKey
   let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" "http://localhost/change" True
-  return $ Env conn jwtCfg mailCfg
+  let socialCfg = SocialAuthConfiguration ["test-google-client"] ["test-apple-client"]
+  return $ Env conn jwtCfg mailCfg socialCfg
 
 -- | Run an AppM action in a test environment
 runTestApp :: Connection -> AppM a -> IO (Either AppError a)
