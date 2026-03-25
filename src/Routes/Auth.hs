@@ -213,7 +213,7 @@ completeSocialAuth profile requestedUsername = do
 googleAuth :: SocialAuthRequest -> AppM NewUser
 googleAuth request = do
   cfg <- asks socialAuthConfig
-  profileResult <- liftIO $ verifyGoogleToken cfg request.idToken
+  profileResult <- liftIO $ verifySocialToken cfg Google request.idToken
   profile <- either throwError pure profileResult
   completeSocialAuth profile request.username
 
