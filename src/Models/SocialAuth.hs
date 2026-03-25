@@ -13,9 +13,6 @@ data SocialAuthRequest = SocialAuthRequest
   }
   deriving (Eq, Show, Generic)
 
-data SocialProvider = Google | Apple
-  deriving (Eq, Show)
-
 data SocialProfile = SocialProfile
   { providerSubject :: String,
     email :: Maybe String,

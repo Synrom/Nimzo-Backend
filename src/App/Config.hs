@@ -37,8 +37,7 @@ data MailConfiguration = Google
   } deriving (Show)
 
 data SocialAuthConfiguration = SocialAuthConfiguration
-  { googleClientIds :: [String],
-    appleClientIds :: [String]
+  { googleClientIds :: [String]
   }
   deriving (Show)
 
@@ -64,8 +63,7 @@ loadOptionalCsv name = do
 loadSocialAuthConfig :: IO SocialAuthConfiguration
 loadSocialAuthConfig = do
   googleIds <- loadOptionalCsv "GOOGLE_CLIENT_IDS"
-  appleIds <- loadOptionalCsv "APPLE_CLIENT_IDS"
-  pure $ SocialAuthConfiguration googleIds appleIds
+  pure $ SocialAuthConfiguration googleIds
 
 loadMailConfig :: IO MailConfiguration
 loadMailConfig = do
@@ -86,8 +84,14 @@ loadJWT = do
   secret <- Env.getEnv "JWT_SECRET"
   pure $ defaultJWTSettings $ fromSecret $ pack secret
 
-loadWebOrigin :: IO ByteString
-loadWebOrigin = do
+loadWebOrigins :: IO [ByteString]
+loadWebOrigins = do
   values <- parseFile ".env"
   load False values
-  pack <$> Env.getEnv "WEBORIGIN"
+  maybeOrigins <- Env.lookupEnv "WEB_ORIGINS"
+  case maybeOrigins of
+    Just raw ->
+      pure $ map (pack . trim) $ splitCsv raw
+    Nothing -> do
+      origin <- Env.getEnv "WEBORIGIN"
+      pure [pack origin]
