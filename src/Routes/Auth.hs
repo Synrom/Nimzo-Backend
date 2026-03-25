@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -47,7 +48,6 @@ import Models.Watermelon (Success (Success), JsonableMsg (..))
 type API = 
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "google" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
-    :<|> "auth" :> "apple" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] User :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] AuthTokenRequest :> Delete '[JSON] JsonableMsg
     :<|> "user" :> "reqChange" :> ReqBody '[JSON] UserEmail :> Post '[JSON] JsonableMsg
@@ -56,7 +56,6 @@ type API =
 
 type Server = 
   (AuthRequest -> AppM NewUser)
-  :<|> (SocialAuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
   :<|> (User -> AppM NewUser)
   :<|> (AuthTokenRequest -> AppM JsonableMsg)
@@ -76,15 +75,34 @@ missingSocialEmail = Unauthorized "Social login did not provide an email for fir
 invalidUsername :: AppError
 invalidUsername = Unauthorized "Invalid username."
 
+invalidPassword :: AppError
+invalidPassword = Unauthorized "Password cannot be empty."
+
 createUser :: User -> AppM NewUser
 createUser user = do
+  let trimmedUsername = trim user.username
+  ensure invalidUsername (not (null trimmedUsername))
+  ensure invalidPassword (not (T.null user.password))
+  let normalizedUser :: User
+      normalizedUser =
+        User
+          trimmedUsername
+          user.password
+          user.salt
+          user.premium
+          user.xp
+          user.streak
+          user.last_activity
+          user.rank
+          user.email
+          user.verified
   s <- liftIO generateSalt
-  let pwdhash = hashWithSalt s user.password
-  dbuser <- Repo.User.insert $ user {Models.User.password = pwdhash, salt = s}
+  let pwdhash = hashWithSalt s (Models.User.password normalizedUser)
+  dbuser <- Repo.User.insert $ normalizedUser {Models.User.password = pwdhash, salt = s}
   tokens <- createTokens dbuser
   forkAppM $ do
     verification_token <- createUserVerification dbuser
-    sendVerificationMail user.username user.email verification_token
+    sendVerificationMail normalizedUser.username normalizedUser.email verification_token
   return $ newUser tokens dbuser
 
 authCheck :: AuthRequest -> AppM NewUser
@@ -165,12 +183,8 @@ createSocialUser username email = do
   let passwordHash = hashWithSalt saltValue rawPassword
   Repo.User.insertSocial username passwordHash saltValue email
 
-providerName :: SocialProvider -> String
-providerName Google = "google"
-providerName Apple = "apple"
-
-completeSocialAuth :: SocialProvider -> SocialProfile -> Maybe String -> AppM NewUser
-completeSocialAuth provider profile requestedUsername = do
+completeSocialAuth :: SocialProfile -> Maybe String -> AppM NewUser
+completeSocialAuth profile requestedUsername = do
   linkedUser <- Repo.UserIdentity.findUser providerLabel profile.providerSubject
   user <- case linkedUser of
     Just existing -> ensureVerifiedUser existing
@@ -194,20 +208,14 @@ completeSocialAuth provider profile requestedUsername = do
   tokens <- createTokens user
   pure $ newUser tokens user
   where
-    providerLabel = providerName provider
-
-socialAuth :: SocialProvider -> SocialAuthRequest -> AppM NewUser
-socialAuth provider request = do
-  cfg <- asks socialAuthConfig
-  profileResult <- liftIO $ verifySocialToken cfg provider request.idToken
-  profile <- either throwError pure profileResult
-  completeSocialAuth provider profile request.username
+    providerLabel = "google"
 
 googleAuth :: SocialAuthRequest -> AppM NewUser
-googleAuth = socialAuth Google
-
-appleAuth :: SocialAuthRequest -> AppM NewUser
-appleAuth = socialAuth Apple
+googleAuth request = do
+  cfg <- asks socialAuthConfig
+  profileResult <- liftIO $ verifyGoogleToken cfg request.idToken
+  profile <- either throwError pure profileResult
+  completeSocialAuth profile request.username
 
 refreshToken :: AuthTokenRequest -> AppM AuthTokens
 refreshToken (AuthTokenRequest reftoken) = do
@@ -244,7 +252,6 @@ server :: Server
 server = 
   authCheck
   :<|> googleAuth
-  :<|> appleAuth
   :<|> createUser 
   :<|> deleteUser 
   :<|> requestChangePwd

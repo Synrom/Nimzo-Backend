@@ -26,8 +26,10 @@ import App.Error (AppError(..), throwAppError)
 import App.Auth (AuthenticatedUser(..), generateSalt, hashWithSalt)
 import Models.Rank (RankQuery)
 import Models.User (UserXP(..), User(..), PublicUser (PublicUser), NewPassword (..))
+import Models.Onboarding (OnboardingPreferencesPayload)
 import Repo.Rank (listRank)
 import Repo.User (findUsername, changePwd)
+import qualified Repo.Onboarding as OnboardingRepo
 import Repo.Utils (orThrow)
 import Models.Watermelon (JsonableMsg(Msg))
 
@@ -35,11 +37,13 @@ type API =
   "rank" :> ReqBody '[JSON] RankQuery :> Post '[JSON] [UserXP]
   :<|> "user" :> Get '[JSON] PublicUser
   :<|> "user" :> "changepwd" :> ReqBody '[JSON] NewPassword :> Post '[JSON] JsonableMsg
+  :<|> "user" :> "onboarding" :> ReqBody '[JSON] OnboardingPreferencesPayload :> Post '[JSON] JsonableMsg
 
 type Server = 
   (RankQuery -> AppM [UserXP])
   :<|> AppM PublicUser
   :<|> (NewPassword -> AppM JsonableMsg)
+  :<|> (OnboardingPreferencesPayload -> AppM JsonableMsg)
 
 toPublic :: User -> PublicUser
 toPublic (User username password salt premium xp streak last_activity rank email verified) =
@@ -58,8 +62,14 @@ changeUserPwd username pwd = do
   changePwd username s pwdhash
   return $ Msg "Successfully updated password."
 
+saveOnboardingPreferences :: String -> OnboardingPreferencesPayload -> AppM JsonableMsg
+saveOnboardingPreferences username payload = do
+  OnboardingRepo.upsertForUser username payload
+  return $ Msg "Successfully saved onboarding preferences."
+
 server :: AuthResult AuthenticatedUser -> Server
 server (Authenticated user) = listRank
   :<|> toPublic <$> getUserRoute user.username
   :<|> changeUserPwd user.username
+  :<|> saveOnboardingPreferences user.username
 server _ = throwAppError $ Unauthorized "No access."
