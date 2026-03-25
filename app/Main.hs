@@ -11,6 +11,7 @@ import Network.Wai.Logger (withStdoutLogger)
 import Network.Wai (Middleware, rawPathInfo, requestMethod, responseStatus)
 import Network.Wai.Internal (Response(..))
 import Network.HTTP.Types.Status (statusCode, statusMessage)
+import System.IO (hSetBuffering, stdout, stderr, BufferMode(LineBuffering))
 import Servant
 import Servant.Auth.Server
 import Network.Wai.Middleware.Cors
@@ -19,7 +20,6 @@ import Database.PostgreSQL.Simple (connectPostgreSQL)
 import App.API (api)
 import App.Env (Env(..))
 import App.Server (mkServer)
-import App.Options (provideOptions)
 import App.Config 
 
 responseDetails :: Response -> String
@@ -56,21 +56,26 @@ logErrorResponses app req sendResponse =
 
 main :: IO ()
 main = do
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
   mailconfig <- loadMailConfig
   dbUrl <- loadDbUrl
   socialConfig <- loadSocialAuthConfig
   conn <-connectPostgreSQL $ pack dbUrl
   jwtCfg <- loadJWT
-  origin <- loadWebOrigin
+  origins <- loadWebOrigins
   let cookie = defaultCookieSettings
       env    = Env { dbConn = conn, jwtSettings = jwtCfg, mailConfig = mailconfig, socialAuthConfig = socialConfig }
       ctx    = jwtCfg :. cookie :. EmptyContext
   withStdoutLogger $ \logger -> do
     let settings = setPort 8080 $ setLogger logger defaultSettings -- TODO: make port configurable
-    let policy = simpleCorsResourcePolicy {corsOrigins = Just ([origin], True), corsRequestHeaders = [ "content-type", "authorization" ] }
+    let policy =
+          simpleCorsResourcePolicy
+            { corsOrigins = Just (origins, True),
+              corsRequestHeaders = ["content-type", "authorization"]
+            }
     putStrLn "Running server on port 8080 ..."
     runSettings settings $
       logErrorResponses $
       cors (const $ Just policy) $
-      provideOptions api $
       serveWithContext api ctx (mkServer env)

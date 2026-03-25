@@ -16,7 +16,7 @@ import Crypto.JWT
 import Crypto.JOSE.JWK (JWKSet)
 import App.Config (SocialAuthConfiguration(..))
 import App.Error (AppError(..))
-import Models.SocialAuth (SocialProfile(..), SocialProvider(..))
+import Models.SocialAuth (SocialProfile(..))
 
 data ProviderSettings = ProviderSettings
   { clientIds :: [String],
@@ -27,46 +27,52 @@ data ProviderSettings = ProviderSettings
 invalidTokenError :: AppError
 invalidTokenError = Unauthorized "Invalid social login token."
 
-providerNotConfigured :: SocialProvider -> AppError
-providerNotConfigured provider =
-  Internal $ socialProviderName provider ++ " login is not configured."
+providerNotConfigured :: AppError
+providerNotConfigured = Internal "Google login is not configured."
 
-socialProviderName :: SocialProvider -> String
-socialProviderName Google = "Google"
-socialProviderName Apple = "Apple"
-
-providerSettings :: SocialAuthConfiguration -> SocialProvider -> ProviderSettings
-providerSettings cfg Google =
+providerSettings :: SocialAuthConfiguration -> ProviderSettings
+providerSettings cfg =
   ProviderSettings (googleClientIds cfg) ["accounts.google.com", "https://accounts.google.com"] "https://www.googleapis.com/oauth2/v3/certs"
-providerSettings cfg Apple =
-  ProviderSettings (appleClientIds cfg) ["https://appleid.apple.com"] "https://appleid.apple.com/auth/keys"
 
-verifySocialToken :: SocialAuthConfiguration -> SocialProvider -> String -> IO (Either AppError SocialProfile)
-verifySocialToken cfg provider token
-  | null (clientIds settings) = pure $ Left $ providerNotConfigured provider
+verifyGoogleToken :: SocialAuthConfiguration -> String -> IO (Either AppError SocialProfile)
+verifyGoogleToken cfg token
+  | null (clientIds settings) = do
+      return $ Left providerNotConfigured
   | otherwise = do
+      putStrLn $ "[SocialAuth] verifying Google token len=" ++ show (length token)
+      putStrLn $ "[SocialAuth] allowed clients: " ++ show (clientIds settings)
+      putStrLn $ "[SocialAuth] allowed issuers: " ++ show (issuers settings)
       manager <- getGlobalManager
       request <- parseRequest (jwksUrl settings)
       response <- httpLbs request manager
       now <- getCurrentTime
-      pure $ do
-        jwkSet <- decodeJwkSet (responseBody response)
-        claims <- decodeAndVerifyClaims settings now jwkSet token
-        claimsToProfile claims
+      case decodeJwkSet (responseBody response) of
+        Left err -> do
+          putStrLn $ "[SocialAuth] Failed to decode Google JWK set: " ++ show err
+          return $ Left err
+        Right jwkSet -> do
+          eitherClaims <- decodeAndVerifyClaims "Google" settings now jwkSet token
+          case eitherClaims of
+            Left err -> return $ Left err
+            Right claims -> return $ claimsToProfile claims
   where
-    settings = providerSettings cfg provider
+    settings = providerSettings cfg
 
 decodeJwkSet :: BL.ByteString -> Either AppError JWKSet
 decodeJwkSet body = case eitherDecode body of
   Left _ -> Left invalidTokenError
   Right jwkSet -> Right jwkSet
 
-decodeAndVerifyClaims :: ProviderSettings -> UTCTime -> JWKSet -> String -> Either AppError ClaimsSet
-decodeAndVerifyClaims settings now jwkSet token = case runExcept verification of
-  Left _ -> Left invalidTokenError
+decodeAndVerifyClaims :: String -> ProviderSettings -> UTCTime -> JWKSet -> String -> IO (Either AppError ClaimsSet)
+decodeAndVerifyClaims providerName settings now jwkSet token = case runExcept verification of
+  Left jwtErr -> do
+    putStrLn $ "[SocialAuth] JWT verification failed for " ++ providerName ++ ": " ++ show jwtErr
+    return $ Left invalidTokenError
   Right claims
-    | validIssuer claims -> Right claims
-    | otherwise -> Left invalidTokenError
+    | validIssuer claims -> return $ Right claims
+    | otherwise -> do
+        putStrLn $ "[SocialAuth] Invalid issuer for " ++ providerName ++ ": " ++ show (claimString "iss" claims)
+        return $ Left invalidTokenError
   where
     verification :: Except JWTError ClaimsSet
     verification = do
