@@ -126,7 +126,14 @@ infeasibleCreated :: Integer -> Integer -> UserCardView -> Bool
 infeasibleCreated now lastPulledAt card = not $ isFeasible now lastPulledAt card.nextRequest card.numCorrectTrials card.numCorrectTrials
 
 delete :: MonadDB m => String -> UTCTime -> String -> m ()
-delete username deleteAt id = do 
-  DatabaseTime createdAt  <- one =<< runQuery "DELETE FROM user_card_views WHERE id = ? RETURNING created_at" (Only $ markString username id)
-  execute "INSERT INTO deleted_ucvs (id, user_id, created_at, deleted_at) VALUES (?, ?, ?, ?)" (markString username id, username, createdAt, deleteAt)
-  return ()
+delete username deleteAt id = do
+  createdRows <- runQuery "SELECT created_at FROM user_card_views WHERE id = ?" (Only markedId)
+  case createdRows of
+    [] -> pure ()
+    [DatabaseTime createdAt] -> do
+      execute "DELETE FROM user_card_views WHERE id = ?" (Only markedId)
+      execute "INSERT INTO deleted_ucvs (id, user_id, created_at, deleted_at) VALUES (?, ?, ?, ?)" (markedId, username, createdAt, deleteAt)
+      pure ()
+    _ -> pure ()
+  where
+    markedId = markString username id

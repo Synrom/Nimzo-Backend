@@ -290,8 +290,9 @@ spec = describe "Repo.Deck" $ do
           , SearchContinuation "c5" 1
           , SearchContinuation "e6" 1
           ]
-        map (.name) (decks response) `shouldBe` ["French", "Sicilian"]
-        map (.isPublic) (decks response) `shouldBe` [True, True]
+        map (.deck.name) (decks response) `shouldBe` ["French", "Sicilian"]
+        map (.deck_nr_cards) (decks response) `shouldBe` [2, 2]
+        map (.deck.isPublic) (decks response) `shouldBe` [True, True]
 
     it "counts exact matches and prefix matches, but only yields continuations after the prefix" $ do
       withCleanDb $ \conn -> do
@@ -312,7 +313,8 @@ spec = describe "Repo.Deck" $ do
           [ SearchContinuation "Nc3" 1
           , SearchContinuation "Nf3" 1
           ]
-        map (.name) (decks response) `shouldBe` ["Exact Prefix Deck"]
+        map (.deck.name) (decks response) `shouldBe` ["Exact Prefix Deck"]
+        map (.deck_nr_cards) (decks response) `shouldBe` [3]
 
     it "limits only the deck list when limitDecks is set" $ do
       withCleanDb $ \conn -> do
@@ -341,7 +343,8 @@ spec = describe "Repo.Deck" $ do
           , SearchContinuation "e6" 1
           , SearchContinuation "g6" 1
           ]
-        map (.name) (decks response) `shouldBe` ["Alpha"]
+        map (.deck.name) (decks response) `shouldBe` ["Alpha"]
+        map (.deck_nr_cards) (decks response) `shouldBe` [3]
 
     it "limits continuations independently when limitContinuations is set" $ do
       withCleanDb $ \conn -> do
@@ -362,7 +365,8 @@ spec = describe "Repo.Deck" $ do
           [ SearchContinuation "e5" 3
           , SearchContinuation "c5" 1
           ]
-        map (.name) (decks response) `shouldBe` ["Move Alpha", "Move Beta"]
+        map (.deck.name) (decks response) `shouldBe` ["Move Alpha", "Move Beta"]
+        map (.deck_nr_cards) (decks response) `shouldBe` [3, 2]
 
     it "treats non-positive limits as returning no rows for that section" $ do
       withCleanDb $ \conn -> do
@@ -418,7 +422,8 @@ spec = describe "Repo.Deck" $ do
           [ SearchContinuation "c5" 1
           , SearchContinuation "e5" 1
           ]
-        map (.name) (decks whiteResponse) `shouldBe` ["White Deck"]
+        map (.deck.name) (decks whiteResponse) `shouldBe` ["White Deck"]
+        map (.deck_nr_cards) (decks whiteResponse) `shouldBe` [2]
 
         blackResult <- runTestApp conn $ Repo.Deck.searchContinuations "e4" (Just "b") Nothing Nothing
         blackResponse <- expectRight blackResult
@@ -426,7 +431,8 @@ spec = describe "Repo.Deck" $ do
           [ SearchContinuation "e5" 1
           , SearchContinuation "e6" 1
           ]
-        map (.name) (decks blackResponse) `shouldBe` ["Black Deck"]
+        map (.deck.name) (decks blackResponse) `shouldBe` ["Black Deck"]
+        map (.deck_nr_cards) (decks blackResponse) `shouldBe` [2]
 
     it "filters continuation search by color when no prefix is provided" $ do
       withCleanDb $ \conn -> do
@@ -458,4 +464,5 @@ spec = describe "Repo.Deck" $ do
         response <- expectRight result
 
         continuations response `shouldBe` [SearchContinuation "e4" 1]
-        map (.name) (decks response) `shouldBe` ["No Prefix White"]
+        map (.deck.name) (decks response) `shouldBe` ["No Prefix White"]
+        map (.deck_nr_cards) (decks response) `shouldBe` [1]

@@ -14,10 +14,12 @@ import TestHelpers
 import Routes.Auth
 import Routes.User
 import Repo.User
+import qualified Repo.UserIdentity as UserIdentity
 import Models.User
+import Models.SocialAuth
 import App.Auth
 import Repo.Classes (MonadMail(mailCfg))
-import App.Config 
+import qualified App.Config as Config
 
 isLeft' :: Either a b -> Bool
 isLeft' (Left _) = True
@@ -33,7 +35,8 @@ spec = describe "Routes.Auth" $ do
 
         result <- runTestApp conn mailCfg
         mail_cfg <- expectRight result
-        mail_cfg.test `shouldBe` True
+        case mail_cfg of
+          Config.Google _ _ _ _ _ _ isTest -> isTest `shouldBe` True
 
         result <- runTestApp conn $ Routes.Auth.createUser user
         newUserData <- expectRight result
@@ -135,6 +138,52 @@ spec = describe "Routes.Auth" $ do
       withCleanDb $ \conn -> do
         let refreshReq = AuthTokenRequest "invalid.token.here"
         result <- runTestApp conn $ Routes.Auth.refreshToken refreshReq
+
+        result `shouldSatisfy` isLeft'
+
+  describe "completeSocialAuth" $ do
+    it "creates a verified user and links a google identity on first login" $ do
+      withCleanDb $ \conn -> do
+        let profile = SocialProfile "google-sub-1" (Just "socialnew@example.com") True
+
+        result <- runTestApp conn $ Routes.Auth.completeSocialAuth Google profile (Just "socialnew")
+        newUserData <- expectRight result
+
+        newUserData.username `shouldBe` "socialnew"
+        newUserData.email `shouldBe` "socialnew@example.com"
+        newUserData.verified `shouldBe` True
+
+        linkedUser <- expectRight =<< runTestApp conn (UserIdentity.findUser "google" "google-sub-1")
+        fmap (.username) linkedUser `shouldBe` Just "socialnew"
+
+    it "logs a social user into the same local account on repeated login" $ do
+      withCleanDb $ \conn -> do
+        let profile = SocialProfile "google-sub-repeat" (Just "repeat@example.com") True
+
+        firstLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth Google profile (Just "repeatuser"))
+        secondLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth Google profile Nothing)
+
+        firstLogin.username `shouldBe` secondLogin.username
+        secondLogin.email `shouldBe` "repeat@example.com"
+
+    it "links a google identity to an existing local account with the same email" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "existinglocal" "existing@example.com" "password"
+        _ <- runTestApp conn $ Routes.Auth.createUser user
+
+        let profile = SocialProfile "google-sub-link" (Just "existing@example.com") True
+        linkedLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth Google profile Nothing)
+
+        linkedLogin.username `shouldBe` "existinglocal"
+
+        linkedUser <- expectRight =<< runTestApp conn (UserIdentity.findUser "google" "google-sub-link")
+        fmap (.username) linkedUser `shouldBe` Just "existinglocal"
+
+    it "fails first-time social login when the provider supplies no email" $ do
+      withCleanDb $ \conn -> do
+        let profile = SocialProfile "apple-sub-no-email" Nothing False
+
+        result <- runTestApp conn $ Routes.Auth.completeSocialAuth Apple profile Nothing
 
         result `shouldSatisfy` isLeft'
 

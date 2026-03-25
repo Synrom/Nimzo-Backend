@@ -58,11 +58,12 @@ main :: IO ()
 main = do
   mailconfig <- loadMailConfig
   dbUrl <- loadDbUrl
+  socialConfig <- loadSocialAuthConfig
   conn <-connectPostgreSQL $ pack dbUrl
   jwtCfg <- loadJWT
   origin <- loadWebOrigin
   let cookie = defaultCookieSettings
-      env    = Env { dbConn = conn, jwtSettings = jwtCfg, mailConfig = mailconfig }
+      env    = Env { dbConn = conn, jwtSettings = jwtCfg, mailConfig = mailconfig, socialAuthConfig = socialConfig }
       ctx    = jwtCfg :. cookie :. EmptyContext
   withStdoutLogger $ \logger -> do
     let settings = setPort 8080 $ setLogger logger defaultSettings -- TODO: make port configurable
