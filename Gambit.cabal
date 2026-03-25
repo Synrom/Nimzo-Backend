@@ -21,6 +21,7 @@ library
   exposed-modules:
       Models.User,
       Models.UserIdentity,
+      Models.Onboarding,
       Models.SocialAuth,
       Models.Deck, 
       Models.DeckSearch,
@@ -44,6 +45,7 @@ library
       Repo.Deck,
       Repo.User,
       Repo.UserIdentity,
+      Repo.Onboarding,
       Repo.Xp,
       Repo.Utils,
       Repo.Rank,
@@ -135,6 +137,7 @@ test-suite Tests
       Repo.UserSpec,
       Repo.DeckSpec,
       Routes.AuthSpec,
+      Routes.UserSpec,
       Routes.WatermelonSpec
     hs-source-dirs:
       test

@@ -75,6 +75,18 @@ spec = describe "Routes.Auth" $ do
 
         result `shouldSatisfy` isLeft'
 
+    it "fails when username is empty" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "" "empty-user@example.com" "password"
+        result <- runTestApp conn $ Routes.Auth.createUser user
+        result `shouldSatisfy` isLeft'
+
+    it "fails when password is empty" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "empty-password-user" "empty-pwd@example.com" ""
+        result <- runTestApp conn $ Routes.Auth.createUser user
+        result `shouldSatisfy` isLeft'
+
   describe "authCheck" $ do
     it "successfully authenticates with correct credentials" $ do
       withCleanDb $ \conn -> do
@@ -146,7 +158,7 @@ spec = describe "Routes.Auth" $ do
       withCleanDb $ \conn -> do
         let profile = SocialProfile "google-sub-1" (Just "socialnew@example.com") True
 
-        result <- runTestApp conn $ Routes.Auth.completeSocialAuth Google profile (Just "socialnew")
+        result <- runTestApp conn $ Routes.Auth.completeSocialAuth profile (Just "socialnew")
         newUserData <- expectRight result
 
         newUserData.username `shouldBe` "socialnew"
@@ -160,8 +172,8 @@ spec = describe "Routes.Auth" $ do
       withCleanDb $ \conn -> do
         let profile = SocialProfile "google-sub-repeat" (Just "repeat@example.com") True
 
-        firstLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth Google profile (Just "repeatuser"))
-        secondLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth Google profile Nothing)
+        firstLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth profile (Just "repeatuser"))
+        secondLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth profile Nothing)
 
         firstLogin.username `shouldBe` secondLogin.username
         secondLogin.email `shouldBe` "repeat@example.com"
@@ -172,7 +184,7 @@ spec = describe "Routes.Auth" $ do
         _ <- runTestApp conn $ Routes.Auth.createUser user
 
         let profile = SocialProfile "google-sub-link" (Just "existing@example.com") True
-        linkedLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth Google profile Nothing)
+        linkedLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth profile Nothing)
 
         linkedLogin.username `shouldBe` "existinglocal"
 
@@ -183,7 +195,7 @@ spec = describe "Routes.Auth" $ do
       withCleanDb $ \conn -> do
         let profile = SocialProfile "apple-sub-no-email" Nothing False
 
-        result <- runTestApp conn $ Routes.Auth.completeSocialAuth Apple profile Nothing
+        result <- runTestApp conn $ Routes.Auth.completeSocialAuth profile Nothing
 
         result `shouldSatisfy` isLeft'
 

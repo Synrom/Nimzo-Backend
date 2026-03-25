@@ -27,6 +27,17 @@ CREATE TABLE user_identities (
 
 CREATE INDEX user_identities_username_idx ON user_identities(username);
 
+CREATE TABLE user_onboarding_preferences (
+  user_id VARCHAR(250) PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
+  chess_level VARCHAR(50) NOT NULL,
+  elo VARCHAR(50) NOT NULL,
+  organization VARCHAR(50) NOT NULL,
+  motivation VARCHAR(250) NOT NULL,
+  study_goal VARCHAR(50) NOT NULL,
+  last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE user_deck_views (
   id VARCHAR(250) PRIMARY KEY,
   user_id VARCHAR(250) NOT NULL REFERENCES users(username),

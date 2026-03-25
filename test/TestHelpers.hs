@@ -50,6 +50,7 @@ withTestDb = bracket mkTestConn close
 -- | Clean all tables in the test database
 cleanTestDb :: Connection -> IO ()
 cleanTestDb conn = do
+  _ <- execute_ conn "DELETE FROM user_onboarding_preferences"
   _ <- execute_ conn "DELETE FROM decks"
   _ <- execute_ conn "DELETE FROM user_card_views"
   _ <- execute_ conn "DELETE FROM deleted_ucvs"
@@ -61,6 +62,17 @@ cleanTestDb conn = do
 
 ensureTestSchema :: Connection -> IO ()
 ensureTestSchema conn = do
+  _ <- execute_ conn
+    "CREATE TABLE IF NOT EXISTS user_onboarding_preferences (\
+    \ user_id VARCHAR(250) PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,\
+    \ chess_level VARCHAR(50) NOT NULL,\
+    \ elo VARCHAR(50) NOT NULL,\
+    \ organization VARCHAR(50) NOT NULL,\
+    \ motivation VARCHAR(250) NOT NULL,\
+    \ study_goal VARCHAR(50) NOT NULL,\
+    \ last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,\
+    \ created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\
+    \)"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn
@@ -104,7 +116,7 @@ mkTestEnv conn = do
   jwtKey <- generateKey
   let jwtCfg = defaultJWTSettings jwtKey
   let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" "http://localhost/change" True
-  let socialCfg = SocialAuthConfiguration ["test-google-client"] ["test-apple-client"]
+  let socialCfg = SocialAuthConfiguration ["test-google-client"]
   return $ Env conn jwtCfg mailCfg socialCfg
 
 -- | Run an AppM action in a test environment
