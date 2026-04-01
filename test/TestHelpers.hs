@@ -116,7 +116,7 @@ mkTestEnv conn = do
   jwtKey <- generateKey
   let jwtCfg = defaultJWTSettings jwtKey
   let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" "http://localhost/change" True
-  let socialCfg = SocialAuthConfiguration ["test-google-client"]
+  let socialCfg = SocialAuthConfiguration ["test-google-client"] ["test-apple-client"]
   return $ Env conn jwtCfg mailCfg socialCfg
 
 -- | Run an AppM action in a test environment

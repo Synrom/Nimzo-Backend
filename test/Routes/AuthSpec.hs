@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE DataKinds #-}
 
 module Routes.AuthSpec (spec) where
 
@@ -9,6 +10,14 @@ import Test.Hspec
 import qualified Data.Text as T
 import Data.Time (getCurrentTime, addUTCTime, secondsToNominalDiffTime)
 import Control.Monad.IO.Class
+import qualified Data.ByteString.Lazy.Char8 as LBS8
+import Network.Wai (defaultRequest)
+import Network.Wai.Internal (Request(..))
+import Network.Wai.Test (runSession, srequest, SRequest(..), simpleStatus)
+import Network.HTTP.Types.Status (status400)
+import Servant (serveWithContext, Context (EmptyContext))
+import Servant.Server (Context ((:.)))
+import Servant.Auth.Server (defaultCookieSettings, JWTSettings, CookieSettings)
 
 import TestHelpers
 import Routes.Auth
@@ -20,6 +29,9 @@ import Models.SocialAuth
 import App.Auth
 import Repo.Classes (MonadMail(mailCfg))
 import qualified App.Config as Config
+import App.API (api)
+import App.Server (mkServer)
+import App.Env (Env(..))
 
 isLeft' :: Either a b -> Bool
 isLeft' (Left _) = True
@@ -158,7 +170,7 @@ spec = describe "Routes.Auth" $ do
       withCleanDb $ \conn -> do
         let profile = SocialProfile "google-sub-1" (Just "socialnew@example.com") True
 
-        result <- runTestApp conn $ Routes.Auth.completeSocialAuth profile (Just "socialnew")
+        result <- runTestApp conn $ Routes.Auth.completeSocialAuth "google" profile (Just "socialnew") Nothing
         newUserData <- expectRight result
 
         newUserData.username `shouldBe` "socialnew"
@@ -172,8 +184,8 @@ spec = describe "Routes.Auth" $ do
       withCleanDb $ \conn -> do
         let profile = SocialProfile "google-sub-repeat" (Just "repeat@example.com") True
 
-        firstLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth profile (Just "repeatuser"))
-        secondLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth profile Nothing)
+        firstLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth "google" profile (Just "repeatuser") Nothing)
+        secondLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth "google" profile Nothing Nothing)
 
         firstLogin.username `shouldBe` secondLogin.username
         secondLogin.email `shouldBe` "repeat@example.com"
@@ -184,7 +196,7 @@ spec = describe "Routes.Auth" $ do
         _ <- runTestApp conn $ Routes.Auth.createUser user
 
         let profile = SocialProfile "google-sub-link" (Just "existing@example.com") True
-        linkedLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth profile Nothing)
+        linkedLogin <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth "google" profile Nothing Nothing)
 
         linkedLogin.username `shouldBe` "existinglocal"
 
@@ -195,9 +207,42 @@ spec = describe "Routes.Auth" $ do
       withCleanDb $ \conn -> do
         let profile = SocialProfile "apple-sub-no-email" Nothing False
 
-        result <- runTestApp conn $ Routes.Auth.completeSocialAuth profile Nothing
+        result <- runTestApp conn $ Routes.Auth.completeSocialAuth "apple" profile Nothing Nothing
 
         result `shouldSatisfy` isLeft'
+
+    it "creates an unverified apple user from request email fallback when provider email is missing" $ do
+      withCleanDb $ \conn -> do
+        let profile = SocialProfile "apple-sub-fallback" Nothing False
+        result <- runTestApp conn $ Routes.Auth.completeSocialAuth "apple" profile (Just "applefallback") (Just "applefallback@example.com")
+        newUserData <- expectRight result
+
+        newUserData.username `shouldBe` "applefallback"
+        newUserData.email `shouldBe` "applefallback@example.com"
+        newUserData.verified `shouldBe` False
+
+  describe "apple auth endpoint shape" $ do
+    it "exposes POST /auth/apple and expects SocialAuthRequest JSON" $ do
+      withCleanDb $ \conn -> do
+        env <- mkTestEnv conn
+        let cookie = defaultCookieSettings
+        let ctx :: Context '[JWTSettings, CookieSettings]
+            ctx = jwtSettings env :. cookie :. EmptyContext
+        let app = serveWithContext api ctx (mkServer env)
+        let req = SRequest
+              defaultRequest
+                { requestMethod = "POST",
+                  rawPathInfo = "/auth/apple",
+                  pathInfo = ["auth", "apple"],
+                  requestHeaders = [("Content-Type", "application/json")]
+                }
+              (LBS8.pack "{\"id_token\":123}")
+        response <- runSession
+          (srequest req)
+          app
+
+        -- Route exists; malformed request shape should fail with 400.
+        simpleStatus response `shouldBe` status400
 
   describe "password hashing and salt generation" $ do
     it "generates different salts each time" $ do

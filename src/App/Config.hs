@@ -38,6 +38,7 @@ data MailConfiguration = Google
 
 data SocialAuthConfiguration = SocialAuthConfiguration
   { googleClientIds :: [String]
+  , appleClientIds :: [String]
   }
   deriving (Show)
 
@@ -63,7 +64,8 @@ loadOptionalCsv name = do
 loadSocialAuthConfig :: IO SocialAuthConfiguration
 loadSocialAuthConfig = do
   googleIds <- loadOptionalCsv "GOOGLE_CLIENT_IDS"
-  pure $ SocialAuthConfiguration googleIds
+  appleIds <- loadOptionalCsv "APPLE_CLIENT_IDS"
+  pure $ SocialAuthConfiguration googleIds appleIds
 
 loadMailConfig :: IO MailConfiguration
 loadMailConfig = do

@@ -29,13 +29,13 @@ insert user = one =<< runQuery query (user.username, user.password, user.salt, u
     query :: Query
     query = "INSERT INTO users (username, password, salt, email) VALUES (?,?,?,?) RETURNING " <> returnFields
 
-insertSocial :: MonadDB m => String -> T.Text -> T.Text -> String -> m User
-insertSocial username password salt email = one =<< runQuery query (username, password, salt, email)
+insertSocial :: MonadDB m => String -> T.Text -> T.Text -> String -> Bool -> m User
+insertSocial username password salt email verified = one =<< runQuery query (username, password, salt, email, verified)
   where
     query :: Query
     query =
       "INSERT INTO users (username, password, salt, email, verified) \
-      \VALUES (?, ?, ?, ?, TRUE) RETURNING "
+      \VALUES (?, ?, ?, ?, ?) RETURNING "
       <> returnFields
 
 changePwd :: MonadDB m => String -> T.Text -> T.Text -> m ()
