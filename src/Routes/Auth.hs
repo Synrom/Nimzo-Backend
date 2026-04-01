@@ -28,6 +28,7 @@ import Data.ByteString.Lazy.UTF8 (toString)
 import Servant.Auth.Server 
 import Control.Monad.Reader
 import Control.Monad
+import Data.Maybe (isJust)
 import App.Auth
 import App.SocialAuth
 import App.Async
@@ -48,6 +49,7 @@ import Models.Watermelon (Success (Success), JsonableMsg (..))
 type API = 
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "google" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
+    :<|> "auth" :> "apple" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] User :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] AuthTokenRequest :> Delete '[JSON] JsonableMsg
     :<|> "user" :> "reqChange" :> ReqBody '[JSON] UserEmail :> Post '[JSON] JsonableMsg
@@ -56,6 +58,7 @@ type API =
 
 type Server = 
   (AuthRequest -> AppM NewUser)
+  :<|> (SocialAuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
   :<|> (User -> AppM NewUser)
   :<|> (AuthTokenRequest -> AppM JsonableMsg)
@@ -176,46 +179,65 @@ ensureVerifiedUser user
               True
       pure verifiedUser
 
-createSocialUser :: String -> String -> AppM User
-createSocialUser username email = do
+createSocialUser :: String -> String -> Bool -> AppM User
+createSocialUser username email verified = do
   saltValue <- liftIO generateSalt
   rawPassword <- liftIO generateSalt
   let passwordHash = hashWithSalt saltValue rawPassword
-  Repo.User.insertSocial username passwordHash saltValue email
+  Repo.User.insertSocial username passwordHash saltValue email verified
 
-completeSocialAuth :: SocialProfile -> Maybe String -> AppM NewUser
-completeSocialAuth profile requestedUsername = do
+normalizeOptionalEmail :: Maybe String -> Maybe String
+normalizeOptionalEmail maybeEmail =
+  let cleaned = fmap trim maybeEmail
+   in case cleaned of
+        Just value | null value -> Nothing
+        _ -> cleaned
+
+completeSocialAuth :: String -> SocialProfile -> Maybe String -> Maybe String -> AppM NewUser
+completeSocialAuth providerLabel profile requestedUsername requestedEmail = do
   linkedUser <- Repo.UserIdentity.findUser providerLabel profile.providerSubject
   user <- case linkedUser of
     Just existing -> ensureVerifiedUser existing
     Nothing -> do
-      email <- orThrow missingSocialEmail profile.email
-      maybeExisting <- Repo.User.findEmail email
+      let providerEmail = normalizeOptionalEmail profile.email
+      let fallbackEmail = normalizeOptionalEmail requestedEmail
+      email <- orThrow missingSocialEmail (providerEmail `mplus` fallbackEmail)
+      let providerHasVerifiedEmail = isJust providerEmail && profile.emailVerified
+      maybeExisting <- if providerHasVerifiedEmail then Repo.User.findEmail email else pure Nothing
       baseUser <- case maybeExisting of
         Just existing -> ensureVerifiedUser existing
         Nothing -> do
           username <- resolveUsername requestedUsername email
-          createSocialUser username email
+          created <- createSocialUser username email providerHasVerifiedEmail
+          when (not providerHasVerifiedEmail) $ forkAppM $ do
+            verification_token <- createUserVerification created
+            sendVerificationMail created.username created.email verification_token
+          pure created
       Repo.UserIdentity.insertOrUpdate $
         UserIdentity
           { username = baseUser.username,
             provider = providerLabel,
             providerSubject = profile.providerSubject,
-            providerEmail = profile.email,
-            emailVerified = profile.emailVerified
+            providerEmail = providerEmail,
+            emailVerified = providerHasVerifiedEmail
           }
       pure baseUser
   tokens <- createTokens user
   pure $ newUser tokens user
-  where
-    providerLabel = "google"
 
 googleAuth :: SocialAuthRequest -> AppM NewUser
 googleAuth request = do
   cfg <- asks socialAuthConfig
   profileResult <- liftIO $ verifyGoogleToken cfg request.idToken
   profile <- either throwError pure profileResult
-  completeSocialAuth profile request.username
+  completeSocialAuth "google" profile request.username request.requestEmail
+
+appleAuth :: SocialAuthRequest -> AppM NewUser
+appleAuth request = do
+  cfg <- asks socialAuthConfig
+  profileResult <- liftIO $ verifyAppleToken cfg request.idToken
+  profile <- either throwError pure profileResult
+  completeSocialAuth "apple" profile request.username request.requestEmail
 
 refreshToken :: AuthTokenRequest -> AppM AuthTokens
 refreshToken (AuthTokenRequest reftoken) = do
@@ -252,6 +274,7 @@ server :: Server
 server = 
   authCheck
   :<|> googleAuth
+  :<|> appleAuth
   :<|> createUser 
   :<|> deleteUser 
   :<|> requestChangePwd

@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 module Models.SocialAuth where
 
@@ -9,7 +10,8 @@ import GHC.Generics
 
 data SocialAuthRequest = SocialAuthRequest
   { idToken :: String,
-    username :: Maybe String
+    username :: Maybe String,
+    requestEmail :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
@@ -24,6 +26,7 @@ jsonOpts :: Options
 jsonOpts = defaultOptions
   { fieldLabelModifier = \case
       "idToken" -> "id_token"
+      "requestEmail" -> "email"
       "emailVerified" -> "email_verified"
       "providerSubject" -> "provider_subject"
       other -> other
