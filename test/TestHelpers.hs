@@ -74,6 +74,8 @@ ensureTestSchema conn = do
     \ created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\
     \)"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
+  _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS new_cards_today INTEGER NOT NULL DEFAULT 0"
+  _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS last_study_date VARCHAR(10) NOT NULL DEFAULT ''"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn
     "ALTER TABLE decks \
@@ -174,6 +176,8 @@ mkTestDeck did dname author userDeckId = Deck
 mkTestUserDeckView :: String -> String -> String -> UserDeckView
 mkTestUserDeckView viewId uid deckName = UserDeckView
   { Models.UserDeckView.numCardsToday = 0
+  , Models.UserDeckView.newCardsToday = 0
+  , Models.UserDeckView.lastStudyDate = ""
   , Models.UserDeckView.cardsPerDay = 20
   , Models.UserDeckView.numCardsLearnt = 0
   , Models.UserDeckView.isAuthor = True

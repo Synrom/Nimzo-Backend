@@ -72,15 +72,33 @@ mkLegacyUserDeckViewChanges changes = object
   , "deleted" .= changes.deleted
   ]
 
+mkSchemaV2UserDeckViewChanges :: TableChanges UserDeckView -> Value
+mkSchemaV2UserDeckViewChanges changes = object
+  [ "created" .= map schemaV2UserDeckView changes.created
+  , "updated" .= map schemaV2UserDeckView changes.updated
+  , "deleted" .= changes.deleted
+  ]
+
 mkLegacyChanges :: Changes -> Value
 mkLegacyChanges changes = object
   [ "user_card_views" .= changes.user_card_views
   , "user_deck_views" .= mkLegacyUserDeckViewChanges changes.user_deck_views
   ]
 
+mkSchemaV2Changes :: Changes -> Value
+mkSchemaV2Changes changes = object
+  [ "user_card_views" .= changes.user_card_views
+  , "user_deck_views" .= mkSchemaV2UserDeckViewChanges changes.user_deck_views
+  ]
+
 toPullPayload :: Integer -> ChangesResponse -> Value
 toPullPayload schemaVersion response
-  | schemaVersion >= 2 = toJSON response
+  | schemaVersion >= 3 = toJSON response
+  | schemaVersion == 2 =
+      object
+        [ "changes" .= mkSchemaV2Changes response.changes
+        , "timestamp" .= response.timestamp
+        ]
   | otherwise =
       object
         [ "changes" .= mkLegacyChanges response.changes
@@ -117,6 +135,21 @@ legacyUserDeckView deck = object
   , "name" .= deck.name
   , "is_public" .= deck.isPublic
   , "description" .= deck.description
+  , "num_cards_total" .= deck.numCardsTotal
+  ]
+
+schemaV2UserDeckView :: UserDeckView -> Value
+schemaV2UserDeckView deck = object
+  [ "num_cards_today" .= deck.numCardsToday
+  , "cards_per_day" .= deck.cardsPerDay
+  , "num_cards_learnt" .= deck.numCardsLearnt
+  , "is_author" .= deck.isAuthor
+  , "user_id" .= deck.userId
+  , "id" .= deck.udvId
+  , "name" .= deck.name
+  , "is_public" .= deck.isPublic
+  , "description" .= deck.description
+  , "color" .= deck.color
   , "num_cards_total" .= deck.numCardsTotal
   ]
 
