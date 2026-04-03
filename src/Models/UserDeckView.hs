@@ -1,15 +1,18 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Models.UserDeckView where
 
-import Data.Aeson (FromJSON (..), ToJSON (..), Options(..), defaultOptions, genericToJSON, genericToEncoding, genericParseJSON)
+import Data.Aeson (FromJSON (..), ToJSON (..), Options(..), defaultOptions, genericToJSON, genericToEncoding, withObject, (.:), (.:?), (.!=))
 import GHC.Generics
 import Database.PostgreSQL.Simple (FromRow)
 
 data UserDeckView = UserDeckView
   { numCardsToday :: Integer,
+    newCardsToday :: Integer,
+    lastStudyDate :: String,
     cardsPerDay :: Integer,
     numCardsLearnt :: Integer,
     isAuthor :: Bool,
@@ -27,6 +30,8 @@ jsonOpts :: Options
 jsonOpts = defaultOptions
   { fieldLabelModifier = \case
       "numCardsToday"  -> "num_cards_today"
+      "newCardsToday"  -> "new_cards_today"
+      "lastStudyDate"  -> "last_study_date"
       "cardsPerDay"    -> "cards_per_day"
       "numCardsLearnt" -> "num_cards_learnt"
       "isAuthor"       -> "is_author"
@@ -42,6 +47,34 @@ instance ToJSON   UserDeckView where
   toEncoding = genericToEncoding jsonOpts
 
 instance FromJSON UserDeckView where
-  parseJSON  = genericParseJSON jsonOpts
+  parseJSON = withObject "UserDeckView" $ \obj -> do
+    numCardsToday <- obj .: "num_cards_today"
+    newCardsToday <- obj .:? "new_cards_today" .!= numCardsToday
+    lastStudyDate <- obj .:? "last_study_date" .!= ""
+    cardsPerDay <- obj .: "cards_per_day"
+    numCardsLearnt <- obj .: "num_cards_learnt"
+    isAuthor <- obj .: "is_author"
+    userId <- obj .: "user_id"
+    udvId <- obj .: "id"
+    name <- obj .: "name"
+    isPublic <- obj .: "is_public"
+    description <- obj .: "description"
+    color <- obj .:? "color"
+    numCardsTotal <- obj .: "num_cards_total"
+    pure $ UserDeckView
+      { numCardsToday = numCardsToday
+      , newCardsToday = newCardsToday
+      , lastStudyDate = lastStudyDate
+      , cardsPerDay = cardsPerDay
+      , numCardsLearnt = numCardsLearnt
+      , isAuthor = isAuthor
+      , userId = userId
+      , udvId = udvId
+      , name = name
+      , isPublic = isPublic
+      , description = description
+      , color = color
+      , numCardsTotal = numCardsTotal
+      }
 
 instance FromRow UserDeckView

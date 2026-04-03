@@ -151,6 +151,27 @@ spec = describe "Routes.Watermelon" $ do
         value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullmodern" (PullParams Nothing 2 Nothing))
         firstDeck <- expectCreatedUserDeckObject value
         KeyMap.lookup "color" firstDeck `shouldSatisfy` (/= Nothing)
+        KeyMap.lookup "new_cards_today" firstDeck `shouldBe` Nothing
+        KeyMap.lookup "last_study_date" firstDeck `shouldBe` Nothing
+
+    it "includes new_cards_today and last_study_date in pulled deck entries for schema version 3" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pullv3" "pullv3@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        now <- getCurrentTime
+
+        let deck = (mkTestUserDeckView "udv_v3" "pullv3" "V3 Deck")
+              { Models.color = Just "b"
+              , Models.newCardsToday = 7
+              , Models.lastStudyDate = "2026-04-03"
+              }
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
+
+        value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullv3" (PullParams Nothing 3 Nothing))
+        firstDeck <- expectCreatedUserDeckObject value
+        KeyMap.lookup "color" firstDeck `shouldSatisfy` (/= Nothing)
+        KeyMap.lookup "new_cards_today" firstDeck `shouldSatisfy` (/= Nothing)
+        KeyMap.lookup "last_study_date" firstDeck `shouldSatisfy` (/= Nothing)
 
   describe "pushRoute" $ do
     it "successfully pushes new user deck views" $ do
