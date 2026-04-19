@@ -20,7 +20,7 @@ module Routes.Auth where
 import qualified Data.Text as T
 import Data.Char (isAlphaNum)
 import Data.List (dropWhileEnd)
-import Servant (throwError, type (:<|>) (..), ServerError(..), err404, err401, type (:>), JSON, ReqBody, JSON, Post, Delete)
+import Servant (throwError, type (:<|>) (..), type (:>), JSON, ReqBody, Post, Delete, QueryParam)
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import qualified Data.ByteString.Char8 as BS8
 import Control.Monad.Except
@@ -33,9 +33,10 @@ import App.Auth
 import App.SocialAuth
 import App.Async
 import Models.User
+import qualified Repo.Onboarding as Repo.Onboarding
+import Models.Onboarding (sessionIdMaxLength)
 import Models.SocialAuth
 import Models.UserIdentity (UserIdentity(..))
-import Repo.User
 import qualified Repo.User as Repo.User
 import qualified Repo.UserIdentity as Repo.UserIdentity
 import App.AppM
@@ -50,7 +51,7 @@ type API =
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "google" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "apple" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
-    :<|> "user" :> ReqBody '[JSON] User :> Post '[JSON] NewUser
+    :<|> "user" :> QueryParam "onboarding_session_id" String :> ReqBody '[JSON] User :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] AuthTokenRequest :> Delete '[JSON] JsonableMsg
     :<|> "user" :> "reqChange" :> ReqBody '[JSON] UserEmail :> Post '[JSON] JsonableMsg
     :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokenRequest :> Post '[JSON] AuthTokens
@@ -60,7 +61,7 @@ type Server =
   (AuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
-  :<|> (User -> AppM NewUser)
+  :<|> (Maybe String -> User -> AppM NewUser)
   :<|> (AuthTokenRequest -> AppM JsonableMsg)
   :<|> (UserEmail -> AppM JsonableMsg)
   :<|> (AuthTokenRequest -> AppM AuthTokens)
@@ -81,8 +82,14 @@ invalidUsername = Unauthorized "Invalid username."
 invalidPassword :: AppError
 invalidPassword = Unauthorized "Password cannot be empty."
 
+invalidOnboardingSession :: AppError
+invalidOnboardingSession = Unauthorized "Invalid onboarding session id."
+
 createUser :: User -> AppM NewUser
-createUser user = do
+createUser = createUserWithOnboarding Nothing
+
+createUserWithOnboarding :: Maybe String -> User -> AppM NewUser
+createUserWithOnboarding maybeOnboardingSessionId user = do
   let trimmedUsername = trim user.username
   ensure invalidUsername (not (null trimmedUsername))
   ensure invalidPassword (not (T.null user.password))
@@ -102,6 +109,12 @@ createUser user = do
   s <- liftIO generateSalt
   let pwdhash = hashWithSalt s (Models.User.password normalizedUser)
   dbuser <- Repo.User.insert $ normalizedUser {Models.User.password = pwdhash, salt = s}
+  case fmap trim maybeOnboardingSessionId of
+    Just sessionId -> do
+      ensure invalidOnboardingSession (not (null sessionId))
+      ensure invalidOnboardingSession (length sessionId <= sessionIdMaxLength)
+      Repo.Onboarding.claimAnonymousForUser dbuser.username sessionId
+    Nothing -> pure ()
   tokens <- createTokens dbuser
   forkAppM $ do
     verification_token <- createUserVerification dbuser
@@ -258,7 +271,7 @@ deleteUser (AuthTokenRequest reftoken) = do
 verifyUser :: Token -> AppM JsonableMsg
 verifyUser token = do 
   user <- orThrow invalidToken =<< decodeVerificationToken token
-  verify user.username 
+  Repo.User.verify user.username 
   return $ Msg "Account verified."
 
 requestChangePwd :: UserEmail -> AppM JsonableMsg
@@ -275,7 +288,7 @@ server =
   authCheck
   :<|> googleAuth
   :<|> appleAuth
-  :<|> createUser 
+  :<|> createUserWithOnboarding
   :<|> deleteUser 
   :<|> requestChangePwd
   :<|> refreshToken 

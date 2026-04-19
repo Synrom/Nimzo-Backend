@@ -53,6 +53,7 @@ library
       Repo.UserDeckView,
       Routes.Deck,
       Routes.User,
+      Routes.Onboarding,
       Routes.Watermelon,
       Routes.Auth,
   build-depends: base >=4.14 && <5,
@@ -136,6 +137,7 @@ test-suite Tests
       TestHelpers,
       Repo.UserSpec,
       Repo.DeckSpec,
+      Repo.OnboardingSpec,
       Routes.AuthSpec,
       Routes.UserSpec,
       Routes.WatermelonSpec

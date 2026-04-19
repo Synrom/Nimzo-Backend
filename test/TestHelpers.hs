@@ -50,6 +50,7 @@ withTestDb = bracket mkTestConn close
 -- | Clean all tables in the test database
 cleanTestDb :: Connection -> IO ()
 cleanTestDb conn = do
+  _ <- execute_ conn "DELETE FROM anonymous_onboarding_progress"
   _ <- execute_ conn "DELETE FROM user_onboarding_preferences"
   _ <- execute_ conn "DELETE FROM decks"
   _ <- execute_ conn "DELETE FROM user_card_views"
@@ -62,6 +63,22 @@ cleanTestDb conn = do
 
 ensureTestSchema :: Connection -> IO ()
 ensureTestSchema conn = do
+  _ <- execute_ conn
+    "CREATE TABLE IF NOT EXISTS anonymous_onboarding_progress (\
+    \ onboarding_session_id VARCHAR(128) PRIMARY KEY,\
+    \ last_step VARCHAR(100) NOT NULL,\
+    \ stopped BOOLEAN NOT NULL DEFAULT FALSE,\
+    \ chess_level VARCHAR(50),\
+    \ elo VARCHAR(50),\
+    \ organization VARCHAR(50),\
+    \ motivation VARCHAR(250),\
+    \ study_goal VARCHAR(50),\
+    \ claimed_by_user VARCHAR(250) UNIQUE REFERENCES users(username) ON DELETE SET NULL,\
+    \ last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,\
+    \ created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\
+    \)"
+  _ <- execute_ conn "CREATE INDEX IF NOT EXISTS anonymous_onboarding_progress_last_step_idx ON anonymous_onboarding_progress(last_step)"
+  _ <- execute_ conn "CREATE INDEX IF NOT EXISTS anonymous_onboarding_progress_last_modified_idx ON anonymous_onboarding_progress(last_modified)"
   _ <- execute_ conn
     "CREATE TABLE IF NOT EXISTS user_onboarding_preferences (\
     \ user_id VARCHAR(250) PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,\
