@@ -23,15 +23,17 @@ import qualified Routes.Deck as DeckRoutes
 import qualified Routes.Auth as AuthRoutes
 import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
+import qualified Routes.Onboarding as Onboarding
 import App.Auth (AuthenticatedUser)
 
 secureServerT :: AuthResult AuthenticatedUser -> ServerT SecureAPI AppM
 secureServerT auth = 
   Watermelon.server auth 
-  :<|> User.server auth 
+  :<|> User.server auth
+  :<|> Onboarding.secureServer auth
 
 serverT :: ServerT API AppM
-serverT = secureServerT :<|> AuthRoutes.server :<|> DeckRoutes.server 
+serverT = secureServerT :<|> Onboarding.publicServer :<|> AuthRoutes.server :<|> DeckRoutes.server 
 
 mkServer :: Env -> Servant.Server API
 mkServer env = hoistServerWithContext api (Proxy :: Proxy '[JWTSettings, CookieSettings]) (nt env) serverT

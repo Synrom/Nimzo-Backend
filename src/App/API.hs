@@ -59,13 +59,16 @@ import qualified Routes.Deck as DeckRoutes
 import qualified Routes.Auth as AuthRoutes
 import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
+import qualified Routes.Onboarding as Onboarding
 
 type SecureAPI =
   Watermelon.API
   :<|> User.API
+  :<|> Onboarding.SecureAPI
 
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI
+    :<|> Onboarding.PublicAPI
     :<|> AuthRoutes.API
     :<|> DeckRoutes.API 
 

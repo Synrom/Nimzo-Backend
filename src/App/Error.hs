@@ -6,7 +6,7 @@
 module App.Error where
 
 import qualified Data.Text as T
-import Servant (ServerError(..), err401, err404, err500, (:<|>) (..))
+import Servant (ServerError(..), err401, err404, err409, err500, (:<|>) (..))
 import Database.PostgreSQL.Simple (SqlError(..))
 import Database.PostgreSQL.Simple.Errors (ConstraintViolation (..), constraintViolation)
 import Network.HTTP.Types.Header (Header)
@@ -50,8 +50,8 @@ toServerError = \case
   NotFound m -> jsonize err404 m
   Unauthorized m -> jsonize err401 m
   Internal m -> jsonize err500 m
-  AlreadyExists m -> jsonize err404 m
-  MergeConflict m -> jsonize err404 m
+  AlreadyExists m -> jsonize err409 m
+  MergeConflict m -> jsonize err409 m
 
 logAppError :: AppError -> IO ()
 logAppError appErr = putStrLn $ "[AppError] " ++ show appErr

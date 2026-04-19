@@ -22,10 +22,13 @@ import Servant.Auth.Server (defaultCookieSettings, JWTSettings, CookieSettings)
 import TestHelpers
 import Routes.Auth
 import Routes.User
+import qualified Routes.Onboarding as OnboardingRoutes
 import Repo.User
 import qualified Repo.UserIdentity as UserIdentity
 import Models.User
 import Models.SocialAuth
+import Models.Onboarding
+import Models.Watermelon (JsonableMsg(..))
 import App.Auth
 import Repo.Classes (MonadMail(mailCfg))
 import qualified App.Config as Config
@@ -98,6 +101,18 @@ spec = describe "Routes.Auth" $ do
         let user = mkTestUser "empty-password-user" "empty-pwd@example.com" ""
         result <- runTestApp conn $ Routes.Auth.createUser user
         result `shouldSatisfy` isLeft'
+
+    it "claims anonymous onboarding during signup when onboarding_session_id is provided" $ do
+      withCleanDb $ \conn -> do
+        let sessionId = "signup-claim-session-1"
+        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a habit") (Just "0-5 mins")
+        _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress anonPayload
+
+        let user = mkTestUser "signup-claim-user" "signup-claim@example.com" "password"
+        _ <- expectRight =<< runTestApp conn (Routes.Auth.createUserWithOnboarding (Just sessionId) user)
+
+        progress <- expectRight =<< runTestApp conn (OnboardingRoutes.getAnonymousOnboardingProgress sessionId)
+        progress.claimed_by_user `shouldBe` Just "signup-claim-user"
 
   describe "authCheck" $ do
     it "successfully authenticates with correct credentials" $ do
@@ -220,6 +235,32 @@ spec = describe "Routes.Auth" $ do
         newUserData.username `shouldBe` "applefallback"
         newUserData.email `shouldBe` "applefallback@example.com"
         newUserData.verified `shouldBe` False
+
+  describe "anonymous onboarding progress" $ do
+    it "stores and reads anonymous onboarding progress by session id" $ do
+      withCleanDb $ \conn -> do
+        let payload =
+              AnonymousOnboardingProgressPayload
+                "anon-session-read-1"
+                "organization"
+                True
+                (Just "beginner")
+                (Just "0-800")
+                (Just "Lichess")
+                Nothing
+                Nothing
+        saveResult <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
+        Msg message <- expectRight saveResult
+        message `shouldBe` "Successfully saved anonymous onboarding progress."
+
+        progress <- expectRight =<< runTestApp conn (OnboardingRoutes.getAnonymousOnboardingProgress "anon-session-read-1")
+        progress.onboarding_session_id `shouldBe` "anon-session-read-1"
+        progress.last_step `shouldBe` "organization"
+        progress.stopped `shouldBe` True
+        progress.chess_level `shouldBe` Just "beginner"
+        progress.elo `shouldBe` Just "0-800"
+        progress.organization `shouldBe` Just "Lichess"
+        progress.claimed_by_user `shouldBe` Nothing
 
   describe "apple auth endpoint shape" $ do
     it "exposes POST /auth/apple and expects SocialAuthRequest JSON" $ do
