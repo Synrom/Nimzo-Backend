@@ -156,6 +156,51 @@ spec = describe "Repo.Deck" $ do
 
         length found `shouldBe` 1
 
+    it "returns enriched search metadata fields" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "metaauthor" "metaauthor@example.com" "password"
+        let rater = mkTestUser "metarater" "metarater@example.com" "password"
+        let importerA = mkTestUser "metaimportera" "metaimportera@example.com" "password"
+        let importerB = mkTestUser "metaimporterb" "metaimporterb@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ Repo.User.insert rater
+        _ <- runTestApp conn $ Repo.User.insert importerA
+        _ <- runTestApp conn $ Repo.User.insert importerB
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, color, is_author) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("udv_meta" :: String, "metaauthor" :: String, "Metadata Deck" :: String, True, 2 :: Integer, "w" :: String, True)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, is_author) VALUES (?, ?, ?, ?, ?, ?)"
+            ("metaimporteraudv_meta" :: String, "metaimportera" :: String, "Metadata Deck Copy" :: String, False, 0 :: Integer, False)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, is_author) VALUES (?, ?, ?, ?, ?, ?)"
+            ("metaimporterbudv_meta" :: String, "metaimporterb" :: String, "Metadata Deck Copy 2" :: String, False, 0 :: Integer, False)
+          return ()
+
+        let sourceDeck = (mkTestDeck 0 "Metadata Deck" "metaauthor" "udv_meta") { Models.Deck.color = Just "w" }
+        insertedDeck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate sourceDeck)
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("meta_card_1" :: String, "metaauthor" :: String, "udv_meta" :: String, "e4 c5 Nf3 d6" :: String, "Meta Card 1" :: String, "w" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("meta_card_2" :: String, "metaauthor" :: String, "udv_meta" :: String, "e4 c5 Nc3 e6" :: String, "Meta Card 2" :: String, "w" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO deck_ratings (deck_id, user_id, rating) VALUES (?, ?, ?)"
+            (Models.Deck.deckId insertedDeck, "metarater" :: String, 5 :: Int)
+          return ()
+
+        result <- runTestApp conn $ Repo.Deck.search (Just "Metadata")
+        found <- expectRight result
+
+        length found `shouldBe` 1
+        let deck = head found
+        deck.name `shouldBe` "Metadata Deck"
+        deck.numCardsTotal `shouldBe` 2
+        deck.previewMoves `shouldBe` "e4 c5"
+        deck.repertoire `shouldBe` "White repertoire"
+        deck.rating `shouldBe` Just 5.0
+        deck.ratingCount `shouldBe` 1
+        deck.downloadCount `shouldBe` 2
+
   describe "find" $ do
     it "finds deck by ID" $ do
       withCleanDb $ \conn -> do
