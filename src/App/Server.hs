@@ -31,6 +31,7 @@ secureServerT auth =
   Watermelon.server auth 
   :<|> User.server auth
   :<|> Onboarding.secureServer auth
+  :<|> DeckRoutes.secureServer auth
 
 serverT :: ServerT API AppM
 serverT = secureServerT :<|> Onboarding.publicServer :<|> AuthRoutes.server :<|> DeckRoutes.server 
