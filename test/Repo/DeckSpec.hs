@@ -14,6 +14,7 @@ import Repo.Deck
 import Repo.User
 import Repo.Classes (execute)
 import Models.Deck
+import qualified Models.DeckDetails
 import Models.DeckSearch
 import Models.User
 import Models.Card
@@ -201,6 +202,46 @@ spec = describe "Repo.Deck" $ do
         deck.ratingCount `shouldBe` 1
         deck.downloadCount `shouldBe` 2
 
+  describe "saveRating" $ do
+    it "upserts a user's rating and keeps one rating per user/deck" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "ratingauthor" "ratingauthor@example.com" "password"
+        let rater = mkTestUser "ratingrater" "ratingrater@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ Repo.User.insert rater
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total, color, is_author) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("udv_rating" :: String, "ratingauthor" :: String, "Rating Deck" :: String, True, 0 :: Integer, "b" :: String, True)
+          return ()
+
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Rating Deck" "ratingauthor" "udv_rating"))
+
+        _ <- runTestApp conn $ Repo.Deck.saveRating "ratingrater" (Models.Deck.deckId deck) 4
+        _ <- runTestApp conn $ Repo.Deck.saveRating "ratingrater" (Models.Deck.deckId deck) 2
+
+        found <- expectRight =<< runTestApp conn (Repo.Deck.search (Just "Rating Deck"))
+        length found `shouldBe` 1
+        let ratedDeck = head found
+        ratedDeck.rating `shouldBe` Just 2.0
+        ratedDeck.ratingCount `shouldBe` 1
+
+    it "rejects ratings outside range 1..5" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "ratingauthor2" "ratingauthor2@example.com" "password"
+        let rater = mkTestUser "ratingrater2" "ratingrater2@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ Repo.User.insert rater
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_rating2" :: String, "ratingauthor2" :: String, "Rating Deck 2" :: String, True, 0 :: Integer)
+          return ()
+
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Rating Deck 2" "ratingauthor2" "udv_rating2"))
+        result <- runTestApp conn $ Repo.Deck.saveRating "ratingrater2" (Models.Deck.deckId deck) 6
+        result `shouldSatisfy` isLeft'
+
   describe "find" $ do
     it "finds deck by ID" $ do
       withCleanDb $ \conn -> do
@@ -225,6 +266,39 @@ spec = describe "Repo.Deck" $ do
       withCleanDb $ \conn -> do
         result <- runTestApp conn $ Repo.Deck.find 999999
         result `shouldSatisfy` isLeft'
+
+  describe "findWithRating" $ do
+    it "returns hasRated=False for anonymous requests" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "detailsuser1" "details1@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_details1" :: String, "detailsuser1" :: String, "Details Deck" :: String, True, 2 :: Integer)
+          return ()
+
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Details Deck" "detailsuser1" "udv_details1"))
+        details <- expectRight =<< runTestApp conn (Repo.Deck.findWithRating Nothing (Models.Deck.deckId deck))
+        Models.DeckDetails.hasRated details `shouldBe` False
+
+    it "returns hasRated=True when current user rated the deck" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "detailsauthor" "detailsauthor@example.com" "password"
+        let rater = mkTestUser "detailsrater" "detailsrater@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ Repo.User.insert rater
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_details2" :: String, "detailsauthor" :: String, "Details Deck 2" :: String, True, 3 :: Integer)
+          return ()
+
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Details Deck 2" "detailsauthor" "udv_details2"))
+        _ <- runTestApp conn $ Repo.Deck.saveRating "detailsrater" (Models.Deck.deckId deck) 5
+
+        details <- expectRight =<< runTestApp conn (Repo.Deck.findWithRating (Just "detailsrater") (Models.Deck.deckId deck))
+        Models.DeckDetails.hasRated details `shouldBe` True
 
   describe "listCardsOfDeck" $ do
     it "returns empty list when deck has no cards" $ do

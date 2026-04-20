@@ -10,12 +10,15 @@ import Data.String (fromString)
 import Data.String.HT (trim)
 import Control.Monad
 import Repo.Classes
-import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast)
+import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast, ensure)
+import App.Error (AppError(..))
 import Models.Deck (Deck(..))
+import Models.DeckDetails (DeckDetails(..))
 import Models.DeckSearch (SearchContinuation(..), SearchContinuationsResponse(..), DeckSearchResult)
 import Models.User (User(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.Card (CardQuery(..), Card(..), PagedCards (..), PendingCard (..))
+import Models.Watermelon (JsonableMsg (Msg))
 
 returnFields :: Query
 returnFields = " id, name, is_public, description, color, num_cards_total, author, user_deck_id "
@@ -95,6 +98,19 @@ find deckId = one =<< runQuery
   where
     query :: Query
     query = "SELECT" <> returnFields <> "FROM decks WHERE id = ?"
+
+findWithRating :: MonadDB m => Maybe String -> Integer -> m DeckDetails
+findWithRating username deckId = one =<< runQuery
+  query
+  (username, deckId)
+  where
+    query :: Query
+    query =
+      "SELECT d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id \
+      \, COALESCE(dr.user_id IS NOT NULL, FALSE) AS has_rated \
+      \FROM decks d \
+      \LEFT JOIN deck_ratings dr ON dr.deck_id = d.id AND dr.user_id = ? \
+      \WHERE d.id = ?"
 
 alreadyExists :: MonadDB m => Deck -> m Bool
 alreadyExists deck = do
@@ -236,3 +252,18 @@ listCardsOfDeck rawQuery = do
     Nothing -> ("", [])
     Just p  -> (" AND (moves = ? OR moves LIKE ? || ' %')", [toField p, toField p])
   finalSql = baseSql <> cursorCondition <> prefixCondition <> " ORDER BY id LIMIT ?"
+
+saveRating :: MonadDB m => String -> Integer -> Integer -> m JsonableMsg
+saveRating username deckId ratingValue = do
+  ensure invalidRating (ratingValue >= 1 && ratingValue <= 5)
+  _ <- find deckId
+  _ <- execute query (deckId, username, ratingValue)
+  return $ Msg "Successfully saved deck rating."
+  where
+    query :: Query
+    query =
+      "INSERT INTO deck_ratings (deck_id, user_id, rating) VALUES (?, ?, ?) \
+      \ON CONFLICT (deck_id, user_id) DO UPDATE \
+      \SET rating = EXCLUDED.rating, last_modified = CURRENT_TIMESTAMP"
+    invalidRating :: AppError
+    invalidRating = Unauthorized "Invalid rating value."

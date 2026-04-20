@@ -65,6 +65,7 @@ type SecureAPI =
   Watermelon.API
   :<|> User.API
   :<|> Onboarding.SecureAPI
+  :<|> DeckRoutes.SecureAPI
 
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI

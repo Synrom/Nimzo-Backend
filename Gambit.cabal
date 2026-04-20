@@ -24,6 +24,8 @@ library
       Models.Onboarding,
       Models.SocialAuth,
       Models.Deck, 
+      Models.DeckDetails,
+      Models.DeckRating,
       Models.DeckSearch,
       Models.Card, 
       Models.Rank, 
