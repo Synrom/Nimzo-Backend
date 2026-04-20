@@ -12,7 +12,7 @@ import Control.Monad
 import Repo.Classes
 import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast)
 import Models.Deck (Deck(..))
-import Models.DeckSearch (SearchContinuation(..), SearchContinuationsResponse(..))
+import Models.DeckSearch (SearchContinuation(..), SearchContinuationsResponse(..), DeckSearchResult)
 import Models.User (User(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.Card (CardQuery(..), Card(..), PagedCards (..), PendingCard (..))
@@ -22,6 +22,21 @@ returnFields = " id, name, is_public, description, color, num_cards_total, autho
 
 qualifiedReturnFields :: Query
 qualifiedReturnFields = " d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id "
+
+searchReturnFields :: Query
+searchReturnFields =
+  " d.id, d.name, d.is_public, d.description, d.color \
+  \, d.num_cards_total \
+  \, d.author, d.user_deck_id \
+  \, d.rating_avg \
+  \, d.rating_count \
+  \, d.download_count \
+  \, COALESCE(d.starting_position, '') AS preview_moves \
+  \, CASE \
+  \    WHEN lower(COALESCE(d.color, '')) IN ('w', 'wh', 'white') THEN 'White repertoire' \
+  \    WHEN lower(COALESCE(d.color, '')) IN ('b', 'bl', 'black') THEN 'Black repertoire' \
+  \    ELSE 'Both sides' \
+  \  END AS repertoire "
 
 insertOrUpdate :: MonadDB m => Deck -> m Deck
 insertOrUpdate deck = let
@@ -45,7 +60,7 @@ insertOrUpdate deck = let
       query 
       (deck.name, deck.isPublic, deck.description, deck.color, deck.numCardsTotal, deck.author, deck.user_deck_id)
 
-searchInstant :: MonadDB m => Maybe String -> m [Deck]
+searchInstant :: MonadDB m => Maybe String -> m [DeckSearchResult]
 searchInstant Nothing = return []
 searchInstant (Just s)
   | stripped == "" = return []
@@ -54,24 +69,24 @@ searchInstant (Just s)
     stripped = trim s
     query :: Query
     query =
-      "SELECT" <> returnFields <>
-      "FROM decks \
-      \WHERE is_public = TRUE \
-      \AND search_vector_name @@ to_tsquery('english', ? || ':*') \
-      \ORDER BY ts_rank(search_vector_name, to_tsquery('english', ? || ':*')) DESC \
+      "SELECT" <> searchReturnFields <>
+      "FROM decks d \
+      \WHERE d.is_public = TRUE \
+      \AND d.search_vector_name @@ to_tsquery('english', ? || ':*') \
+      \ORDER BY ts_rank(d.search_vector_name, to_tsquery('english', ? || ':*')) DESC \
       \LIMIT 10"
 
-search :: MonadDB m => Maybe String -> m [Deck]
+search :: MonadDB m => Maybe String -> m [DeckSearchResult]
 search Nothing = return []
 search (Just s) = runQuery query (s, s)
   where
     query :: Query
     query = 
-      "SELECT" <> returnFields <>
-      "FROM decks \
-      \WHERE is_public = TRUE \
-      \AND search_vector @@ plainto_tsquery('english', ?) \
-      \ORDER BY ts_rank(search_vector, plainto_tsquery('english', ?)) DESC"
+      "SELECT" <> searchReturnFields <>
+      "FROM decks d \
+      \WHERE d.is_public = TRUE \
+      \AND d.search_vector @@ plainto_tsquery('english', ?) \
+      \ORDER BY ts_rank(d.search_vector, plainto_tsquery('english', ?)) DESC"
 
 find :: MonadDB m => Integer -> m Deck
 find deckId = one =<< runQuery

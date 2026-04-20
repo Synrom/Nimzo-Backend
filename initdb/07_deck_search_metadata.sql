@@ -1,0 +1,28 @@
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS deck_ratings (
+  id BIGSERIAL PRIMARY KEY,
+  deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+  user_id VARCHAR(250) NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+  rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(deck_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS deck_ratings_deck_id_idx ON deck_ratings(deck_id);
+
+ALTER TABLE user_deck_views
+  ADD COLUMN IF NOT EXISTS source_user_deck_id VARCHAR(250);
+
+CREATE INDEX IF NOT EXISTS user_deck_views_source_user_deck_id_idx
+  ON user_deck_views(source_user_deck_id);
+
+ALTER TABLE decks
+  ADD COLUMN IF NOT EXISTS starting_position VARCHAR(255) NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS rating_sum INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_count BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS rating_avg DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS download_count BIGINT NOT NULL DEFAULT 0;
+
+COMMIT;

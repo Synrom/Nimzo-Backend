@@ -12,6 +12,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Time (getCurrentTime, UTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import System.Environment (lookupEnv)
+import Data.String (fromString)
 import Servant.Auth.Server
 import Servant (ServerError(..), Handler, runHandler)
 import qualified Data.Text as T
@@ -73,6 +74,7 @@ ensureTestSchema conn = do
     \ organization VARCHAR(50),\
     \ motivation VARCHAR(250),\
     \ study_goal VARCHAR(50),\
+    \ heard_about_us VARCHAR(50),\
     \ claimed_by_user VARCHAR(250) UNIQUE REFERENCES users(username) ON DELETE SET NULL,\
     \ last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,\
     \ created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\
@@ -87,13 +89,19 @@ ensureTestSchema conn = do
     \ organization VARCHAR(50) NOT NULL,\
     \ motivation VARCHAR(250) NOT NULL,\
     \ study_goal VARCHAR(50) NOT NULL,\
+    \ heard_about_us VARCHAR(50) NOT NULL DEFAULT 'Other',\
     \ last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,\
     \ created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\
     \)"
+  _ <- execute_ conn "ALTER TABLE user_onboarding_preferences ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50) NOT NULL DEFAULT 'Other'"
+  _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50)"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS new_cards_today INTEGER NOT NULL DEFAULT 0"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS last_study_date VARCHAR(10) NOT NULL DEFAULT ''"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
+  applySqlFile conn "initdb/07_deck_search_metadata.sql"
+  applySqlFile conn "initdb/08_deck_search_metadata_functions_triggers.sql"
+  applySqlFile conn "initdb/09_deck_search_metadata_backfill.sql"
   _ <- execute_ conn
     "ALTER TABLE decks \
     \ADD COLUMN IF NOT EXISTS search_vector tsvector \
@@ -120,6 +128,12 @@ ensureTestSchema conn = do
     \ UNIQUE (provider, provider_subject)\
     \)"
   _ <- execute_ conn "CREATE INDEX IF NOT EXISTS user_identities_username_idx ON user_identities(username)"
+  return ()
+
+applySqlFile :: Connection -> FilePath -> IO ()
+applySqlFile conn path = do
+  sql <- readFile path
+  _ <- execute_ conn (fromString sql)
   return ()
 
 -- | Run a test with a clean database

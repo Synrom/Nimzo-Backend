@@ -34,6 +34,7 @@ CREATE TABLE user_onboarding_preferences (
   organization VARCHAR(50) NOT NULL,
   motivation VARCHAR(250) NOT NULL,
   study_goal VARCHAR(50) NOT NULL,
+  heard_about_us VARCHAR(50) NOT NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -47,6 +48,7 @@ CREATE TABLE anonymous_onboarding_progress (
   organization VARCHAR(50),
   motivation VARCHAR(250),
   study_goal VARCHAR(50),
+  heard_about_us VARCHAR(50),
   claimed_by_user VARCHAR(250) UNIQUE REFERENCES users(username) ON DELETE SET NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -68,6 +70,7 @@ CREATE TABLE user_deck_views (
   is_public BOOLEAN NOT NULL,
   description VARCHAR(500),
   color VARCHAR(2),
+  source_user_deck_id VARCHAR(250) REFERENCES user_deck_views(id),
   num_cards_total INTEGER NOT NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

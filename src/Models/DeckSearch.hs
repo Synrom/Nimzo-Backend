@@ -28,6 +28,23 @@ data SearchContinuationsResponse = SearchContinuationsResponse
   }
   deriving (Eq, Show, Generic)
 
+data DeckSearchResult = DeckSearchResult
+  { deckId :: Integer,
+    name :: String,
+    isPublic :: Bool,
+    description :: String,
+    color :: Maybe String,
+    numCardsTotal :: Integer,
+    author :: String,
+    user_deck_id :: String,
+    rating :: Maybe Double,
+    ratingCount :: Integer,
+    downloadCount :: Integer,
+    previewMoves :: String,
+    repertoire :: String
+  }
+  deriving (Eq, Show, Generic)
+
 searchContinuationJsonOpts :: Options
 searchContinuationJsonOpts = defaultOptions
   { fieldLabelModifier = \case
@@ -58,6 +75,9 @@ instance FromJSON SearchDeck where
 
 instance ToJSON SearchContinuationsResponse
 instance FromJSON SearchContinuationsResponse
+instance ToJSON DeckSearchResult
+instance FromJSON DeckSearchResult
+instance FromRow DeckSearchResult
 instance FromRow SearchContinuation
 
 instance FromRow SearchDeck where
