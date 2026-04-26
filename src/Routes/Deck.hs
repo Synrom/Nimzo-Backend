@@ -22,6 +22,7 @@ import App.AppM
 import App.Error (throwAppError, AppError(..))
 import App.Auth (AuthenticatedUser(..))
 import Models.DeckDetails (DeckDetails(..))
+import Models.DeckImage (DeckImageUploadRequest(..), DeckImageUploadResponse(..))
 import Models.DeckSearch (SearchContinuationsResponse, DeckSearchResult)
 import Models.DeckRating (DeckRatingRequest(..))
 import Models.Watermelon (JsonableMsg)
@@ -38,6 +39,7 @@ type API =
 type SecureAPI =
   "deck" :> Capture "id" Integer :> Get '[JSON] DeckDetails
   :<|> "deck" :> Capture "id" Integer :> "rating" :> ReqBody '[JSON] DeckRatingRequest :> Post '[JSON] JsonableMsg
+  :<|> "deck" :> Capture "id" Integer :> "image" :> ReqBody '[JSON] DeckImageUploadRequest :> Post '[JSON] DeckImageUploadResponse
 
 type Server =
   (Maybe String -> AppM [DeckSearchResult])
@@ -49,6 +51,7 @@ type Server =
 type SecureServer =
   (Integer -> AppM DeckDetails)
   :<|> (Integer -> DeckRatingRequest -> AppM JsonableMsg)
+  :<|> (Integer -> DeckImageUploadRequest -> AppM DeckImageUploadResponse)
 
 server :: Server
 server =
@@ -62,6 +65,7 @@ secureServer :: AuthResult AuthenticatedUser -> SecureServer
 secureServer auth =
   (\deckId -> Repo.Deck.findWithRating (fmap (.username) authenticatedUser) deckId)
   :<|> ratingHandler
+  :<|> imageUploadHandler
   where
     authenticatedUser :: Maybe AuthenticatedUser
     authenticatedUser = case auth of
@@ -71,4 +75,9 @@ secureServer auth =
     ratingHandler :: Integer -> DeckRatingRequest -> AppM JsonableMsg
     ratingHandler = case authenticatedUser of
       Just user -> \deckId payload -> Repo.Deck.saveRating user.username deckId payload.rating
+      Nothing -> \_ _ -> throwAppError $ Unauthorized "No access."
+
+    imageUploadHandler :: Integer -> DeckImageUploadRequest -> AppM DeckImageUploadResponse
+    imageUploadHandler = case authenticatedUser of
+      Just user -> \deckId payload -> Repo.Deck.saveDeckImage user.username deckId payload
       Nothing -> \_ _ -> throwAppError $ Unauthorized "No access."

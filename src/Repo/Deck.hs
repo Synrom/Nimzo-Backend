@@ -9,11 +9,23 @@ import Database.PostgreSQL.Simple.ToField (Action, ToField(toField))
 import Data.String (fromString)
 import Data.String.HT (trim)
 import Control.Monad
+import Control.Monad.Except (throwError)
+import Control.Monad.IO.Class (liftIO)
+import Data.Char (isSpace, toLower)
+import Data.List (stripPrefix)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8 as BS8
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
 import Repo.Classes
 import Repo.Utils (one, notNull, removePrefix, orMinTime, safeLast, ensure)
+import App.Env (deckImageDir, deckImagePublicBase)
 import App.Error (AppError(..))
 import Models.Deck (Deck(..))
 import Models.DeckDetails (DeckDetails(..))
+import Models.DeckImage (DeckImageUploadRequest(..), DeckImageUploadResponse(..))
 import Models.DeckSearch (SearchContinuation(..), SearchContinuationsResponse(..), DeckSearchResult)
 import Models.User (User(..))
 import Models.UserDeckView (UserDeckView(..))
@@ -21,16 +33,17 @@ import Models.Card (CardQuery(..), Card(..), PagedCards (..), PendingCard (..))
 import Models.Watermelon (JsonableMsg (Msg))
 
 returnFields :: Query
-returnFields = " id, name, is_public, description, color, num_cards_total, author, user_deck_id "
+returnFields = " id, name, is_public, description, color, num_cards_total, author, user_deck_id, image_url "
 
 qualifiedReturnFields :: Query
-qualifiedReturnFields = " d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id "
+qualifiedReturnFields = " d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url "
 
 searchReturnFields :: Query
 searchReturnFields =
   " d.id, d.name, d.is_public, d.description, d.color \
   \, d.num_cards_total \
   \, d.author, d.user_deck_id \
+  \, d.image_url \
   \, d.rating_avg \
   \, d.rating_count \
   \, d.download_count \
@@ -106,8 +119,9 @@ findWithRating username deckId = one =<< runQuery
   where
     query :: Query
     query =
-      "SELECT d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id \
+      "SELECT d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url \
       \, COALESCE(dr.user_id IS NOT NULL, FALSE) AS has_rated \
+      \, dr.rating AS user_rating \
       \FROM decks d \
       \LEFT JOIN deck_ratings dr ON dr.deck_id = d.id AND dr.user_id = ? \
       \WHERE d.id = ?"
@@ -200,7 +214,7 @@ buildDecksQuery prefix mColor mLimit =
           , [toField prefix, toField prefix]
           )
     orderSql =
-      " GROUP BY d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id \
+      " GROUP BY d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url \
       \ORDER BY COUNT(*) DESC, d.name"
     limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
     limitSql
@@ -267,3 +281,76 @@ saveRating username deckId ratingValue = do
       \SET rating = EXCLUDED.rating, last_modified = CURRENT_TIMESTAMP"
     invalidRating :: AppError
     invalidRating = Unauthorized "Invalid rating value."
+
+saveDeckImage :: MonadDB m => String -> Integer -> DeckImageUploadRequest -> m DeckImageUploadResponse
+saveDeckImage username deckId payload = do
+  deck <- find deckId
+  ensure notAuthor (deck.author == username)
+  (extension, imageBytes) <- decodeDeckImage payload
+  env <- askEnv
+  let fileName = "deck-" ++ show deckId ++ "." ++ extension
+  let uploadPath = deckImageDir env </> fileName
+  liftIO $ createDirectoryIfMissing True (deckImageDir env)
+  liftIO $ BS.writeFile uploadPath imageBytes
+  version <- floor <$> liftIO getPOSIXTime
+  let imageUrl = normalizePublicBase (deckImagePublicBase env) ++ "/" ++ fileName ++ "?v=" ++ show version
+  _ <- execute
+    "UPDATE decks SET image_url = ?, last_modified = CURRENT_TIMESTAMP WHERE id = ?"
+    (imageUrl, deckId)
+  pure $ DeckImageUploadResponse imageUrl
+  where
+    maxDeckImageBytes :: Int
+    maxDeckImageBytes = 5 * 1024 * 1024
+
+    notAuthor :: AppError
+    notAuthor = Unauthorized "Only the deck author can upload a deck image."
+
+    invalidImage :: AppError
+    invalidImage = Unauthorized "Invalid deck image payload."
+
+    unsupportedMimeType :: AppError
+    unsupportedMimeType = Unauthorized "Unsupported image type. Allowed: image/jpeg, image/png, image/webp."
+
+    imageTooLarge :: AppError
+    imageTooLarge = Unauthorized "Deck image is too large. Max 5MB."
+
+    normalizeMime :: String -> String
+    normalizeMime = map toLower . filter (not . isSpace)
+
+    normalizePublicBase :: String -> String
+    normalizePublicBase raw = case reverse raw of
+      '/':rest -> reverse rest
+      _ -> raw
+
+    mimeToExtension :: String -> Maybe String
+    mimeToExtension "image/jpeg" = Just "jpg"
+    mimeToExtension "image/jpg" = Just "jpg"
+    mimeToExtension "image/png" = Just "png"
+    mimeToExtension "image/webp" = Just "webp"
+    mimeToExtension _ = Nothing
+
+    parseDataUrl :: String -> Maybe (String, String)
+    parseDataUrl raw = do
+      afterPrefix <- stripPrefix "data:" raw
+      let (header, rest) = break (== ',') afterPrefix
+      encoded <- stripPrefix "," rest
+      mime <- stripSuffix ";base64" header
+      pure (mime, encoded)
+
+    stripSuffix :: Eq a => [a] -> [a] -> Maybe [a]
+    stripSuffix suffix str =
+      reverse <$> stripPrefix (reverse suffix) (reverse str)
+
+    decodeDeckImage :: MonadDB m => DeckImageUploadRequest -> m (String, BS.ByteString)
+    decodeDeckImage request = do
+      let providedMime = normalizeMime request.mimeType
+      let rawPayload = filter (not . isSpace) request.base64Data
+      let (payloadMimeRaw, encodedData) = case parseDataUrl rawPayload of
+            Just pair -> pair
+            Nothing -> (providedMime, rawPayload)
+      let payloadMime = normalizeMime payloadMimeRaw
+      let finalMime = if providedMime == "" then payloadMime else providedMime
+      extension <- maybe (throwError unsupportedMimeType) pure (mimeToExtension finalMime)
+      decoded <- either (const $ throwError invalidImage) pure (B64.decode $ BS8.pack encodedData)
+      ensure imageTooLarge (BS.length decoded <= maxDeckImageBytes)
+      pure (extension, decoded)

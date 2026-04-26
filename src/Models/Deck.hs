@@ -16,7 +16,8 @@ data Deck = Deck
     color :: Maybe String,
     numCardsTotal :: Integer,
     author :: String,
-    user_deck_id :: String
+    user_deck_id :: String,
+    imageUrl :: Maybe String
   }
   deriving (Eq, Show, Generic)
 

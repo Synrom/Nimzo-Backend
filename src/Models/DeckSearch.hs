@@ -37,6 +37,7 @@ data DeckSearchResult = DeckSearchResult
     numCardsTotal :: Integer,
     author :: String,
     user_deck_id :: String,
+    imageUrl :: Maybe String,
     rating :: Maybe Double,
     ratingCount :: Integer,
     downloadCount :: Integer,

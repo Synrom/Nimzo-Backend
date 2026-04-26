@@ -97,3 +97,21 @@ loadWebOrigins = do
     Nothing -> do
       origin <- Env.getEnv "WEBORIGIN"
       pure [pack origin]
+
+loadDeckImageDir :: IO FilePath
+loadDeckImageDir = do
+  values <- parseFile ".env"
+  load False values
+  maybeDir <- Env.lookupEnv "DECK_IMAGE_DIR"
+  pure $ case maybeDir of
+    Just path | trim path /= "" -> trim path
+    _ -> "/app/public/deck-images"
+
+loadDeckImagePublicBase :: IO String
+loadDeckImagePublicBase = do
+  values <- parseFile ".env"
+  load False values
+  maybeBase <- Env.lookupEnv "DECK_IMAGE_PUBLIC_BASE"
+  pure $ case maybeBase of
+    Just base | trim base /= "" -> trim base
+    _ -> "/deck-images"

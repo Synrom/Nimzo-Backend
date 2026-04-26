@@ -61,11 +61,20 @@ main = do
   mailconfig <- loadMailConfig
   dbUrl <- loadDbUrl
   socialConfig <- loadSocialAuthConfig
+  uploadDir <- loadDeckImageDir
+  uploadPublicBase <- loadDeckImagePublicBase
   conn <-connectPostgreSQL $ pack dbUrl
   jwtCfg <- loadJWT
   origins <- loadWebOrigins
   let cookie = defaultCookieSettings
-      env    = Env { dbConn = conn, jwtSettings = jwtCfg, mailConfig = mailconfig, socialAuthConfig = socialConfig }
+      env    = Env
+        { dbConn = conn
+        , jwtSettings = jwtCfg
+        , mailConfig = mailconfig
+        , socialAuthConfig = socialConfig
+        , deckImageDir = uploadDir
+        , deckImagePublicBase = uploadPublicBase
+        }
       ctx    = jwtCfg :. cookie :. EmptyContext
   withStdoutLogger $ \logger -> do
     let settings = setPort 8080 $ setLogger logger defaultSettings -- TODO: make port configurable

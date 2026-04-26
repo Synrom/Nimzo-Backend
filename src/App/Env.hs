@@ -11,6 +11,8 @@ data Env = Env
   , jwtSettings :: JWTSettings
   , mailConfig  :: MailConfiguration
   , socialAuthConfig :: SocialAuthConfiguration
+  , deckImageDir :: FilePath
+  , deckImagePublicBase :: String
   }
 
 withConn :: Env -> (Connection -> IO a) -> IO a
