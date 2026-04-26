@@ -128,6 +128,6 @@ authored :: UserDeckView -> Bool
 authored view = view.isAuthor
 
 userDeckToDeck :: UserDeckView -> Deck
-userDeckToDeck unmarked  = Deck 0 name isPublic description color numCardsTotal userId udvId Nothing
+userDeckToDeck unmarked  = Deck 0 name isPublic description color numCardsTotal userId udvId Nothing Nothing Nothing Nothing
   where
     (UserDeckView numCardsToday newCardsToday lastStudyDate cardsPerDay numCardsLearnt isAuthor userId udvId name isPublic description color numCardsTotal) = mark unmarked

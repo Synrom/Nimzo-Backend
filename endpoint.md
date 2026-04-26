@@ -123,3 +123,66 @@ Use stable strings so analytics stays consistent, e.g.:
 - `study_goal`
 - `signup`
 - `complete`
+
+## Featured / TikTok Decks
+
+Use deck promotion metadata to mark specific public decks (for example TikTok campaigns) and return them quickly for onboarding/library surfaces.
+
+### 1) Get featured decks (public)
+
+- Method: `GET`
+- Path: `/deck/featured?source=tiktok&limit=12`
+- Auth: none
+
+Query params:
+- `source` optional, defaults to `tiktok`
+- `limit` optional, defaults to `20`, max `50`
+
+Response:
+- same shape as deck search results, now with optional:
+  - `featuredSource`
+  - `featuredRank`
+  - `videoUrl`
+  - `imageUrl`
+
+Sorting:
+- `featuredRank` ascending (nulls last), then `downloadCount`, then `rating`.
+
+### 2) Set promotion metadata (author only)
+
+- Method: `POST`
+- Path: `/deck/:id/promotion`
+- Auth: required (JWT)
+
+Request JSON:
+
+```json
+{
+  "featuredSource": "tiktok",
+  "featuredRank": 1,
+  "videoUrl": "https://example.com/video.mp4"
+}
+```
+
+Rules:
+- only deck author can update promotion metadata
+- supported featured source currently: `tiktok` (or `null` to clear)
+- `featuredRank` must be between `0` and `100000`
+- `videoUrl` must be absolute `http(s)` URL, max 1000 chars, or `null` to clear
+
+Response JSON:
+
+```json
+{
+  "deckId": 123,
+  "featuredSource": "tiktok",
+  "featuredRank": 1,
+  "videoUrl": "https://example.com/video.mp4"
+}
+```
+
+## Database Migration
+
+Run:
+- `initdb/10_deck_images.sql` (if not already applied)
+- `initdb/11_deck_promotion_metadata.sql`

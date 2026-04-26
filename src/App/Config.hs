@@ -115,3 +115,6 @@ loadDeckImagePublicBase = do
   pure $ case maybeBase of
     Just base | trim base /= "" -> trim base
     _ -> "/deck-images"
+
+loadDeckPromotionModerators :: IO [String]
+loadDeckPromotionModerators = loadOptionalCsv "DECK_PROMOTION_MODERATORS"

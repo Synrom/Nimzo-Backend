@@ -63,6 +63,7 @@ main = do
   socialConfig <- loadSocialAuthConfig
   uploadDir <- loadDeckImageDir
   uploadPublicBase <- loadDeckImagePublicBase
+  promotionModerators <- loadDeckPromotionModerators
   conn <-connectPostgreSQL $ pack dbUrl
   jwtCfg <- loadJWT
   origins <- loadWebOrigins
@@ -74,6 +75,7 @@ main = do
         , socialAuthConfig = socialConfig
         , deckImageDir = uploadDir
         , deckImagePublicBase = uploadPublicBase
+        , deckPromotionModerators = promotionModerators
         }
       ctx    = jwtCfg :. cookie :. EmptyContext
   withStdoutLogger $ \logger -> do

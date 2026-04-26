@@ -13,6 +13,7 @@ data Env = Env
   , socialAuthConfig :: SocialAuthConfiguration
   , deckImageDir :: FilePath
   , deckImagePublicBase :: String
+  , deckPromotionModerators :: [String]
   }
 
 withConn :: Env -> (Connection -> IO a) -> IO a

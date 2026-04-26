@@ -7,13 +7,16 @@ module Repo.DeckSpec (spec) where
 import Test.Hspec
 import Data.Maybe (isJust)
 import Control.Monad (forM_)
-import Database.PostgreSQL.Simple (Connection)
+import Database.PostgreSQL.Simple (Connection, Only(..))
 
 import TestHelpers
 import Repo.Deck
 import Repo.User
 import Repo.Classes (execute)
 import Models.Deck
+import Models.DeckImage (DeckImageUploadRequest(..))
+import Models.DeckPromotion (DeckPromotionRequest(..), DeckPromotionResponse(..))
+import qualified Models.DeckImage as DeckImageModel
 import qualified Models.DeckDetails
 import Models.DeckSearch
 import Models.User
@@ -157,6 +160,24 @@ spec = describe "Repo.Deck" $ do
 
         length found `shouldBe` 1
 
+    it "returns matches for short full-search queries via name fallback" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "shortsearchuser" "shortsearch@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_short1" :: String, "shortsearchuser" :: String, "Sicilian Defense" :: String, True, 10 :: Integer)
+          return ()
+
+        _ <- runTestApp conn $ Repo.Deck.insertOrUpdate (mkTestDeck 0 "Sicilian Defense" "shortsearchuser" "udv_short1")
+
+        result <- runTestApp conn $ Repo.Deck.search (Just "Si")
+        found <- expectRight result
+
+        length found `shouldBe` 1
+        (head found).name `shouldBe` "Sicilian Defense"
+
     it "returns enriched search metadata fields" $ do
       withCleanDb $ \conn -> do
         let author = mkTestUser "metaauthor" "metaauthor@example.com" "password"
@@ -242,6 +263,135 @@ spec = describe "Repo.Deck" $ do
         result <- runTestApp conn $ Repo.Deck.saveRating "ratingrater2" (Models.Deck.deckId deck) 6
         result `shouldSatisfy` isLeft'
 
+  describe "saveDeckImage" $ do
+    it "allows the author to upload a deck image and stores imageUrl" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "imgauthor" "imgauthor@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_img1" :: String, "imgauthor" :: String, "Image Deck" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Image Deck" "imgauthor" "udv_img1"))
+
+        response <- expectRight =<< runTestApp conn (Repo.Deck.saveDeckImage "imgauthor" (Models.Deck.deckId deck) (DeckImageUploadRequest "image/png" "aGVsbG8="))
+        DeckImageModel.imageUrl response `shouldSatisfy` (not . null)
+
+    it "rejects deck image upload by non-author" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "imgauthor2" "imgauthor2@example.com" "password"
+        let other = mkTestUser "imgother" "imgother@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ Repo.User.insert other
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_img2" :: String, "imgauthor2" :: String, "Image Deck 2" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Image Deck 2" "imgauthor2" "udv_img2"))
+
+        result <- runTestApp conn $ Repo.Deck.saveDeckImage "imgother" (Models.Deck.deckId deck) (DeckImageUploadRequest "image/png" "aGVsbG8=")
+        result `shouldSatisfy` isLeft'
+
+    it "rejects unsupported image mime type" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "imgauthor3" "imgauthor3@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_img3" :: String, "imgauthor3" :: String, "Image Deck 3" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Image Deck 3" "imgauthor3" "udv_img3"))
+
+        result <- runTestApp conn $ Repo.Deck.saveDeckImage "imgauthor3" (Models.Deck.deckId deck) (DeckImageUploadRequest "image/gif" "R0lGODlhAQABAIAAAAUEBA==")
+        result `shouldSatisfy` isLeft'
+
+  describe "promotion metadata" $ do
+    it "saves and returns valid promotion metadata for the author" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "promoauthor" "promoauthor@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_promo1" :: String, "promoauthor" :: String, "Promo Deck" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck" "promoauthor" "udv_promo1"))
+
+        response <- expectRight =<< runTestApp conn
+          (Repo.Deck.savePromotion "promoauthor" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just 3) (Just "https://example.com/promo.mp4")))
+        let DeckPromotionResponse _ source rank video = response
+        source `shouldBe` Just "tiktok"
+        rank `shouldBe` Just 3
+        video `shouldBe` Just "https://example.com/promo.mp4"
+
+    it "rejects invalid featured source" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "promoauthor2" "promoauthor2@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_promo2" :: String, "promoauthor2" :: String, "Promo Deck 2" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 2" "promoauthor2" "udv_promo2"))
+
+        result <- runTestApp conn
+          (Repo.Deck.savePromotion "promoauthor2" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "youtube") (Just 1) Nothing))
+        result `shouldSatisfy` isLeft'
+
+    it "rejects invalid video url" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "promoauthor3" "promoauthor3@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_promo3" :: String, "promoauthor3" :: String, "Promo Deck 3" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 3" "promoauthor3" "udv_promo3"))
+
+        result <- runTestApp conn
+          (Repo.Deck.savePromotion "promoauthor3" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just 1) (Just "ftp://example.com/video.mp4")))
+        result `shouldSatisfy` isLeft'
+
+    it "rejects promotion moderation for non-moderators" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "promomodauthor" "promomodauthor@example.com" "password"
+        let moderator = mkTestUser "mod1" "mod1@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ Repo.User.insert moderator
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_promomod" :: String, "promomodauthor" :: String, "Promo Mod Deck" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Mod Deck" "promomodauthor" "udv_promomod"))
+        _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = NULL, featured_rank = NULL, video_url = NULL WHERE id = ?" (Only $ Models.Deck.deckId deck)
+
+        result <- runTestApp conn
+          (Repo.Deck.savePromotionByModerator "mod1" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just 2) Nothing))
+        result `shouldSatisfy` isLeft'
+
+  describe "listFeatured" $ do
+    it "returns only featured decks ordered by featuredRank and applies limit" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "featureduser" "featureduser@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_featured_a" :: String, "featureduser" :: String, "Featured A" :: String, True, 0 :: Integer)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_featured_b" :: String, "featureduser" :: String, "Featured B" :: String, True, 0 :: Integer)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_featured_c" :: String, "featureduser" :: String, "Featured C" :: String, True, 0 :: Integer)
+          return ()
+        deckA <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Featured A" "featureduser" "udv_featured_a"))
+        deckB <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Featured B" "featureduser" "udv_featured_b"))
+        deckC <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Featured C" "featureduser" "udv_featured_c"))
+
+        _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 2 WHERE id = ?" (Only $ Models.Deck.deckId deckA)
+        _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 1 WHERE id = ?" (Only $ Models.Deck.deckId deckB)
+        _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 3 WHERE id = ?" (Only $ Models.Deck.deckId deckC)
+
+        featured <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 2))
+        map (.name) featured `shouldBe` ["Featured B", "Featured A"]
+
   describe "find" $ do
     it "finds deck by ID" $ do
       withCleanDb $ \conn -> do
@@ -281,6 +431,7 @@ spec = describe "Repo.Deck" $ do
         deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Details Deck" "detailsuser1" "udv_details1"))
         details <- expectRight =<< runTestApp conn (Repo.Deck.findWithRating Nothing (Models.Deck.deckId deck))
         Models.DeckDetails.hasRated details `shouldBe` False
+        Models.DeckDetails.userRating details `shouldBe` Nothing
 
     it "returns hasRated=True when current user rated the deck" $ do
       withCleanDb $ \conn -> do
@@ -299,6 +450,7 @@ spec = describe "Repo.Deck" $ do
 
         details <- expectRight =<< runTestApp conn (Repo.Deck.findWithRating (Just "detailsrater") (Models.Deck.deckId deck))
         Models.DeckDetails.hasRated details `shouldBe` True
+        Models.DeckDetails.userRating details `shouldBe` Just 5
 
   describe "listCardsOfDeck" $ do
     it "returns empty list when deck has no cards" $ do

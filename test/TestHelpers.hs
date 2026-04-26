@@ -100,6 +100,9 @@ ensureTestSchema conn = do
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS last_study_date VARCHAR(10) NOT NULL DEFAULT ''"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS image_url VARCHAR(600)"
+  _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_source VARCHAR(50)"
+  _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_rank INTEGER"
+  _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS video_url VARCHAR(1000)"
   applySqlFile conn "initdb/07_deck_search_metadata.sql"
   applySqlFile conn "initdb/08_deck_search_metadata_functions_triggers.sql"
   applySqlFile conn "initdb/09_deck_search_metadata_backfill.sql"
@@ -151,7 +154,7 @@ mkTestEnv conn = do
   let jwtCfg = defaultJWTSettings jwtKey
   let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" "http://localhost/change" True
   let socialCfg = SocialAuthConfiguration ["test-google-client"] ["test-apple-client"]
-  return $ Env conn jwtCfg mailCfg socialCfg "/tmp/nimzo-test-deck-images" "/deck-images"
+  return $ Env conn jwtCfg mailCfg socialCfg "/tmp/nimzo-test-deck-images" "/deck-images" []
 
 -- | Run an AppM action in a test environment
 runTestApp :: Connection -> AppM a -> IO (Either AppError a)
@@ -203,6 +206,9 @@ mkTestDeck did dname author userDeckId = Deck
   , Models.Deck.author = author
   , Models.Deck.user_deck_id = userDeckId
   , Models.Deck.imageUrl = Nothing
+  , Models.Deck.featuredSource = Nothing
+  , Models.Deck.featuredRank = Nothing
+  , Models.Deck.videoUrl = Nothing
   }
 
 -- | Create a test user deck view

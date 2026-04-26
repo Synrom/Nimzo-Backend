@@ -23,6 +23,7 @@ import App.Error (throwAppError, AppError(..))
 import App.Auth (AuthenticatedUser(..))
 import Models.DeckDetails (DeckDetails(..))
 import Models.DeckImage (DeckImageUploadRequest(..), DeckImageUploadResponse(..))
+import Models.DeckPromotion (DeckPromotionRequest(..), DeckPromotionResponse(..))
 import Models.DeckSearch (SearchContinuationsResponse, DeckSearchResult)
 import Models.DeckRating (DeckRatingRequest(..))
 import Models.Watermelon (JsonableMsg)
@@ -32,6 +33,7 @@ import Models.Card (Card, CardQuery, PagedCards)
 type API =
   "deck" :> "search" :> "full" :> QueryParam "query" String :> Get '[JSON] [DeckSearchResult]
   :<|> "deck" :> "search" :> "instant" :> QueryParam "query" String :> Get '[JSON] [DeckSearchResult]
+  :<|> "deck" :> "featured" :> QueryParam "source" String :> QueryParam "limit" Integer :> Get '[JSON] [DeckSearchResult]
   :<|> "deck" :> "search" :> "continuations" :> QueryParam "prefix" String :> QueryParam "color" String :> QueryParam "limitDecks" Integer :> QueryParam "limitContinuations" Integer :> Get '[JSON] SearchContinuationsResponse
   :<|> "deck" :> "cards" :> ReqBody '[JSON] CardQuery :> Post '[JSON] PagedCards
   :<|> "deck" :> Capture "user_deck_id" String :> "continuations" :> QueryParam "prefix" String :> Get '[JSON] [String]
@@ -40,10 +42,13 @@ type SecureAPI =
   "deck" :> Capture "id" Integer :> Get '[JSON] DeckDetails
   :<|> "deck" :> Capture "id" Integer :> "rating" :> ReqBody '[JSON] DeckRatingRequest :> Post '[JSON] JsonableMsg
   :<|> "deck" :> Capture "id" Integer :> "image" :> ReqBody '[JSON] DeckImageUploadRequest :> Post '[JSON] DeckImageUploadResponse
+  :<|> "deck" :> Capture "id" Integer :> "promotion" :> ReqBody '[JSON] DeckPromotionRequest :> Post '[JSON] DeckPromotionResponse
+  :<|> "deck" :> Capture "id" Integer :> "promotion" :> "moderate" :> ReqBody '[JSON] DeckPromotionRequest :> Post '[JSON] DeckPromotionResponse
 
 type Server =
   (Maybe String -> AppM [DeckSearchResult])
   :<|> (Maybe String -> AppM [DeckSearchResult])
+  :<|> (Maybe String -> Maybe Integer -> AppM [DeckSearchResult])
   :<|> (Maybe String -> Maybe String -> Maybe Integer -> Maybe Integer -> AppM SearchContinuationsResponse)
   :<|> (CardQuery -> AppM PagedCards)
   :<|> (String -> Maybe String -> AppM [String])
@@ -52,11 +57,14 @@ type SecureServer =
   (Integer -> AppM DeckDetails)
   :<|> (Integer -> DeckRatingRequest -> AppM JsonableMsg)
   :<|> (Integer -> DeckImageUploadRequest -> AppM DeckImageUploadResponse)
+  :<|> (Integer -> DeckPromotionRequest -> AppM DeckPromotionResponse)
+  :<|> (Integer -> DeckPromotionRequest -> AppM DeckPromotionResponse)
 
 server :: Server
 server =
   Repo.Deck.search
   :<|> Repo.Deck.searchInstant
+  :<|> Repo.Deck.listFeatured
   :<|> (Repo.Deck.searchContinuations . fromMaybe "")
   :<|> Repo.Deck.listCardsOfDeck
   :<|> (\deckId mPrefix -> Repo.Deck.listContinuations deckId (fromMaybe "" mPrefix))
@@ -66,6 +74,8 @@ secureServer auth =
   (\deckId -> Repo.Deck.findWithRating (fmap (.username) authenticatedUser) deckId)
   :<|> ratingHandler
   :<|> imageUploadHandler
+  :<|> promotionHandler
+  :<|> moderationHandler
   where
     authenticatedUser :: Maybe AuthenticatedUser
     authenticatedUser = case auth of
@@ -80,4 +90,14 @@ secureServer auth =
     imageUploadHandler :: Integer -> DeckImageUploadRequest -> AppM DeckImageUploadResponse
     imageUploadHandler = case authenticatedUser of
       Just user -> \deckId payload -> Repo.Deck.saveDeckImage user.username deckId payload
+      Nothing -> \_ _ -> throwAppError $ Unauthorized "No access."
+
+    promotionHandler :: Integer -> DeckPromotionRequest -> AppM DeckPromotionResponse
+    promotionHandler = case authenticatedUser of
+      Just user -> \deckId payload -> Repo.Deck.savePromotion user.username deckId payload
+      Nothing -> \_ _ -> throwAppError $ Unauthorized "No access."
+
+    moderationHandler :: Integer -> DeckPromotionRequest -> AppM DeckPromotionResponse
+    moderationHandler = case authenticatedUser of
+      Just user -> \deckId payload -> Repo.Deck.savePromotionByModerator user.username deckId payload
       Nothing -> \_ _ -> throwAppError $ Unauthorized "No access."

@@ -17,7 +17,10 @@ data Deck = Deck
     numCardsTotal :: Integer,
     author :: String,
     user_deck_id :: String,
-    imageUrl :: Maybe String
+    imageUrl :: Maybe String,
+    featuredSource :: Maybe String,
+    featuredRank :: Maybe Integer,
+    videoUrl :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
