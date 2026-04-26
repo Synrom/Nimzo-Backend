@@ -5,3 +5,5 @@ dist-newstyle
 .env
 *.swp
 CLAUDE.md
+
+changes.md
