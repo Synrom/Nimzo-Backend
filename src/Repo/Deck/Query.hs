@@ -98,7 +98,7 @@ search :: MonadDB m => Maybe String -> m [DeckSearchResult]
 search Nothing = return []
 search (Just s)
   | stripped == "" = return []
-  | otherwise = runQuery query (stripped, "%" ++ stripped ++ "%", stripped, stripped)
+  | otherwise = runQuery query (stripped, stripped, stripped, stripped, stripped)
   where
     stripped = trim s
     query :: Query
@@ -108,11 +108,16 @@ search (Just s)
       \WHERE d.is_public = TRUE \
       \AND ( \
       \  d.search_vector @@ plainto_tsquery('english', ?) \
-      \  OR d.name ILIKE ? \
+      \  OR EXISTS ( \
+      \    SELECT 1 \
+      \    FROM regexp_split_to_table(lower(d.name), '[^[:alnum:]]+') AS token \
+      \    WHERE token LIKE lower(?) || '%' \
+      \  ) \
       \) \
       \ORDER BY \
       \  CASE WHEN d.search_vector @@ plainto_tsquery('english', ?) THEN 0 ELSE 1 END, \
       \  ts_rank(d.search_vector, plainto_tsquery('english', ?)) DESC, \
+      \  NULLIF(strpos(lower(d.name), lower(?)), 0) ASC NULLS LAST, \
       \  d.download_count DESC, \
       \  d.rating_avg DESC NULLS LAST, \
       \  d.name ASC"

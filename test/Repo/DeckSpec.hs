@@ -178,6 +178,27 @@ spec = describe "Repo.Deck" $ do
         length found `shouldBe` 1
         (head found).name `shouldBe` "Sicilian Defense"
 
+    it "prioritizes prefix word matches over inner-word substring matches in full search" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "prefixrankuser" "prefixrank@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_rank_sic" :: String, "prefixrankuser" :: String, "Sicilian Defense" :: String, True, 10 :: Integer)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_rank_benoni" :: String, "prefixrankuser" :: String, "Benoni Defense: Classical Variation (white)" :: String, True, 10 :: Integer)
+          return ()
+
+        _ <- runTestApp conn $ Repo.Deck.insertOrUpdate (mkTestDeck 0 "Sicilian Defense" "prefixrankuser" "udv_rank_sic")
+        _ <- runTestApp conn $ Repo.Deck.insertOrUpdate (mkTestDeck 0 "Benoni Defense: Classical Variation (white)" "prefixrankuser" "udv_rank_benoni")
+
+        result <- runTestApp conn $ Repo.Deck.search (Just "sic")
+        found <- expectRight result
+
+        length found `shouldSatisfy` (>= 2)
+        (head found).name `shouldBe` "Sicilian Defense"
+
     it "returns enriched search metadata fields" $ do
       withCleanDb $ \conn -> do
         let author = mkTestUser "metaauthor" "metaauthor@example.com" "password"
