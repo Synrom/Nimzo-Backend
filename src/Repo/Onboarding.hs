@@ -27,8 +27,8 @@ upsertForUser username payload = do
     query :: Query
     query =
       "INSERT INTO user_onboarding_preferences \
-      \(user_id, chess_level, elo, organization, motivation, study_goal) \
-      \VALUES (?, ?, ?, ?, ?, ?) \
+      \(user_id, chess_level, elo, organization, motivation, study_goal, heard_about_us) \
+      \VALUES (?, ?, ?, ?, ?, ?, 'Other') \
       \ON CONFLICT (user_id) \
       \DO UPDATE SET \
       \ chess_level = EXCLUDED.chess_level, \
@@ -36,6 +36,7 @@ upsertForUser username payload = do
       \ organization = EXCLUDED.organization, \
       \ motivation = EXCLUDED.motivation, \
       \ study_goal = EXCLUDED.study_goal, \
+      \ heard_about_us = COALESCE(user_onboarding_preferences.heard_about_us, EXCLUDED.heard_about_us), \
       \ last_modified = CURRENT_TIMESTAMP"
 
 findByUser :: MonadDB m => String -> m (Maybe OnboardingPreferences)
@@ -102,13 +103,14 @@ claimAnonymousForUser username sessionId = do
       \    AND (claimed_by_user IS NULL OR claimed_by_user = ?) \
       \  RETURNING chess_level, elo, organization, motivation, study_goal \
       \) \
-      \INSERT INTO user_onboarding_preferences (user_id, chess_level, elo, organization, motivation, study_goal) \
+      \INSERT INTO user_onboarding_preferences (user_id, chess_level, elo, organization, motivation, study_goal, heard_about_us) \
       \SELECT ?, \
       \  COALESCE(chess_level, ''), \
       \  COALESCE(elo, ''), \
       \  COALESCE(organization, ''), \
       \  COALESCE(motivation, ''), \
-      \  COALESCE(study_goal, '') \
+      \  COALESCE(study_goal, ''), \
+      \  'Other' \
       \FROM claimed \
       \ON CONFLICT (user_id) \
       \DO UPDATE SET \
@@ -117,6 +119,7 @@ claimAnonymousForUser username sessionId = do
       \ organization = EXCLUDED.organization, \
       \ motivation = EXCLUDED.motivation, \
       \ study_goal = EXCLUDED.study_goal, \
+      \ heard_about_us = COALESCE(user_onboarding_preferences.heard_about_us, EXCLUDED.heard_about_us), \
       \ last_modified = CURRENT_TIMESTAMP \
       \RETURNING 1"
 

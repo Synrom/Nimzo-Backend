@@ -42,7 +42,10 @@ testDbUrl = do
 mkTestConn :: IO Connection
 mkTestConn = do
   url <- testDbUrl
-  connectPostgreSQL $ pack url
+  conn <- connectPostgreSQL $ pack url
+  -- Keep test output readable; schema bootstrap uses many IF EXISTS checks.
+  _ <- execute_ conn "SET client_min_messages TO warning"
+  pure conn
 
 -- | Run an action with a test database connection that is cleaned up afterwards
 withTestDb :: (Connection -> IO a) -> IO a

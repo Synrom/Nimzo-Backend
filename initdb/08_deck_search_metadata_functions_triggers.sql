@@ -301,7 +301,13 @@ BEGIN
       SELECT COUNT(*)::bigint
       FROM user_deck_views udv
       WHERE udv.is_author = FALSE
-        AND udv.source_user_deck_id = NEW.user_deck_id
+        AND (
+          udv.source_user_deck_id = NEW.user_deck_id
+          OR (
+            COALESCE(udv.source_user_deck_id, '') = ''
+            AND RIGHT(udv.id, LENGTH(NEW.user_deck_id)) = NEW.user_deck_id
+          )
+        )
     ),
     rating_sum = COALESCE((
       SELECT SUM(dr.rating)::integer
