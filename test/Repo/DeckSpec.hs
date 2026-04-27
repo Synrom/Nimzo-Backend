@@ -244,6 +244,27 @@ spec = describe "Repo.Deck" $ do
         deck.ratingCount `shouldBe` 1
         deck.downloadCount `shouldBe` 2
 
+  describe "searchInstant" $ do
+    it "handles punctuation-heavy queries without SQL tsquery syntax errors" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "instantuser" "instant@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_instant_1" :: String, "instantuser" :: String, "Center Game: Hall Variation (white)" :: String, True, 10 :: Integer)
+          return ()
+
+        _ <- runTestApp conn $
+          Repo.Deck.insertOrUpdate (mkTestDeck 0 "Center Game: Hall Variation (white)" "instantuser" "udv_instant_1")
+
+        result <- runTestApp conn $
+          Repo.Deck.searchInstant (Just "Center Game: Hall Variation (white)")
+        found <- expectRight result
+
+        length found `shouldBe` 1
+        (head found).name `shouldBe` "Center Game: Hall Variation (white)"
+
   describe "saveRating" $ do
     it "upserts a user's rating and keeps one rating per user/deck" $ do
       withCleanDb $ \conn -> do

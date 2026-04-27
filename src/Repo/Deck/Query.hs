@@ -82,16 +82,23 @@ searchInstant :: MonadDB m => Maybe String -> m [DeckSearchResult]
 searchInstant Nothing = return []
 searchInstant (Just s)
   | stripped == "" = return []
-  | otherwise = runQuery query (stripped, stripped)
+  | otherwise = runQuery query (Only stripped)
   where
     stripped = trim s
     query :: Query
     query =
-      "SELECT" <> searchReturnFields <>
+      "WITH q AS ( \
+      \  SELECT to_tsquery('english', array_to_string(array_agg(token || ':*'), ' & ')) AS tsq \
+      \  FROM regexp_split_to_table(lower(?), '[^[:alnum:]]+') AS t(token) \
+      \  WHERE token <> '' \
+      \) \
+      \SELECT" <> searchReturnFields <>
       "FROM decks d \
+      \CROSS JOIN q \
       \WHERE d.is_public = TRUE \
-      \AND d.search_vector_name @@ to_tsquery('english', ? || ':*') \
-      \ORDER BY ts_rank(d.search_vector_name, to_tsquery('english', ? || ':*')) DESC \
+      \AND q.tsq IS NOT NULL \
+      \AND d.search_vector_name @@ q.tsq \
+      \ORDER BY ts_rank(d.search_vector_name, q.tsq) DESC \
       \LIMIT 10"
 
 search :: MonadDB m => Maybe String -> m [DeckSearchResult]
