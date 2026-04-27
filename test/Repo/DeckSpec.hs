@@ -447,7 +447,7 @@ spec = describe "Repo.Deck" $ do
         result `shouldSatisfy` isLeft'
 
   describe "listFeatured" $ do
-    it "returns only featured decks ordered by featuredRank and applies limit" $ do
+    it "returns only featured decks ordered by newest created_at first and applies limit" $ do
       withCleanDb $ \conn -> do
         let author = mkTestUser "featureduser" "featureduser@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert author
@@ -466,9 +466,12 @@ spec = describe "Repo.Deck" $ do
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 2 WHERE id = ?" (Only $ Models.Deck.deckId deckA)
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 1 WHERE id = ?" (Only $ Models.Deck.deckId deckB)
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 3 WHERE id = ?" (Only $ Models.Deck.deckId deckC)
+        _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-01-01 00:00:00+00" :: String, Models.Deck.deckId deckA)
+        _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-02-01 00:00:00+00" :: String, Models.Deck.deckId deckB)
+        _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-03-01 00:00:00+00" :: String, Models.Deck.deckId deckC)
 
         featured <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 2))
-        map (.name) featured `shouldBe` ["Featured B", "Featured A"]
+        map (.name) featured `shouldBe` ["Featured C", "Featured B"]
 
   describe "find" $ do
     it "finds deck by ID" $ do
