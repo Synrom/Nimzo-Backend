@@ -30,7 +30,7 @@ spec = describe "Repo.User" $ do
 
         inserted.username `shouldBe` "testuser"
         inserted.email `shouldBe` "test@example.com"
-        inserted.xp `shouldBe` 0
+        inserted.xp `shouldBe` 10
         inserted.streak `shouldBe` 0
         inserted.premium `shouldBe` False
         inserted.verified `shouldBe` False

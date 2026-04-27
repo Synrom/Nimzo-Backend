@@ -58,7 +58,7 @@ spec = describe "Routes.Auth" $ do
 
         newUserData.username `shouldBe` "newuser"
         newUserData.email `shouldBe` "newuser@example.com"
-        newUserData.xp `shouldBe` 0
+        newUserData.xp `shouldBe` 10
         newUserData.verified `shouldBe` False
 
         -- Check that tokens were created
