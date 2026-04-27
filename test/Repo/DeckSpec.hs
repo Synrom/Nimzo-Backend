@@ -8,7 +8,7 @@ import Test.Hspec
 import Data.List (sort)
 import Data.Maybe (isJust)
 import Control.Monad (forM_)
-import Database.PostgreSQL.Simple (Connection, Only(..))
+import Database.PostgreSQL.Simple (Connection, Only(..), fromOnly, query)
 
 import TestHelpers
 import Repo.Deck
@@ -447,7 +447,7 @@ spec = describe "Repo.Deck" $ do
         result `shouldSatisfy` isLeft'
 
   describe "listFeatured" $ do
-    it "returns only featured decks ordered by featuredRank and applies limit" $ do
+    it "returns only featured decks ordered by newest created_at first and applies limit" $ do
       withCleanDb $ \conn -> do
         let author = mkTestUser "featureduser" "featureduser@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert author
@@ -466,9 +466,12 @@ spec = describe "Repo.Deck" $ do
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 2 WHERE id = ?" (Only $ Models.Deck.deckId deckA)
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 1 WHERE id = ?" (Only $ Models.Deck.deckId deckB)
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 3 WHERE id = ?" (Only $ Models.Deck.deckId deckC)
+        _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-01-01 00:00:00+00" :: String, Models.Deck.deckId deckA)
+        _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-02-01 00:00:00+00" :: String, Models.Deck.deckId deckB)
+        _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-03-01 00:00:00+00" :: String, Models.Deck.deckId deckC)
 
         featured <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 2))
-        map (.name) featured `shouldBe` ["Featured B", "Featured A"]
+        map (.name) featured `shouldBe` ["Featured C", "Featured B"]
 
   describe "find" $ do
     it "finds deck by ID" $ do
@@ -596,6 +599,64 @@ spec = describe "Repo.Deck" $ do
         -- Should not fail, just limit to 100
         _ <- expectRight result
         return ()
+
+    it "increments deck download_count when cursor is not set" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "downloaduser1" "download1@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_dl_1" :: String, "downloaduser1" :: String, "Download Deck 1" :: String, True, 2 :: Integer)
+          return ()
+
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Download Deck 1" "downloaduser1" "udv_dl_1"))
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("dl_card_1" :: String, "downloaduser1" :: String, "udv_dl_1" :: String, "e4 e5" :: String, "DL Card 1" :: String, "wh" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("dl_card_2" :: String, "downloaduser1" :: String, "udv_dl_1" :: String, "d4 d5" :: String, "DL Card 2" :: String, "wh" :: String, 0 :: Integer)
+          return ()
+
+        beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+
+        let cardQuery = CardQuery Nothing 10 (Models.Deck.deckId deck) Nothing
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck cardQuery)
+
+        afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+
+        let beforeCount = fromOnly (head beforeRows)
+        let afterCount = fromOnly (head afterRows)
+        afterCount `shouldBe` (beforeCount + 1)
+
+    it "does not increment deck download_count when cursor is set" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "downloaduser2" "download2@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_dl_2" :: String, "downloaduser2" :: String, "Download Deck 2" :: String, True, 2 :: Integer)
+          return ()
+
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Download Deck 2" "downloaduser2" "udv_dl_2"))
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("dl2_card_1" :: String, "downloaduser2" :: String, "udv_dl_2" :: String, "e4 e5" :: String, "DL2 Card 1" :: String, "wh" :: String, 0 :: Integer)
+          return ()
+
+        beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+
+        let cardQuery = CardQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck cardQuery)
+
+        afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+
+        let beforeCount = fromOnly (head beforeRows)
+        let afterCount = fromOnly (head afterRows)
+        afterCount `shouldBe` beforeCount
 
   describe "listContinuations" $ do
     it "returns distinct next moves for a single deck prefix" $ do

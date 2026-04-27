@@ -273,6 +273,11 @@ listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
 listCardsOfDeck rawQuery = do
   let cardQuery = rawQuery {limit = min 100 rawQuery.limit}
   deck <- find cardQuery.deckId
+  case rawQuery.cursor of
+    Nothing -> do
+      _ <- execute "UPDATE decks SET download_count = download_count + 1 WHERE id = ?" (Only cardQuery.deckId)
+      pure ()
+    Just _ -> pure ()
   let finalParams = [toField deck.user_deck_id] <> cursorParams <> prefixParams <> [toField cardQuery.limit]
   paginateCards <$> runQuery finalSql finalParams
   where

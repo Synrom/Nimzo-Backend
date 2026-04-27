@@ -38,7 +38,7 @@ listFeatured maybeSource maybeLimit = do
       "FROM decks d \
       \WHERE d.is_public = TRUE \
       \AND d.featured_source = ? \
-      \ORDER BY COALESCE(d.featured_rank, 2147483647) ASC, d.download_count DESC, d.rating_avg DESC NULLS LAST, d.name ASC \
+      \ORDER BY d.created_at DESC, COALESCE(d.featured_rank, 2147483647) ASC, d.download_count DESC, d.rating_avg DESC NULLS LAST, d.name ASC \
       \LIMIT ?"
 
 savePromotion :: MonadDB m => String -> Integer -> DeckPromotionRequest -> m DeckPromotionResponse
