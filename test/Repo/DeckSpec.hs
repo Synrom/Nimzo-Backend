@@ -5,6 +5,7 @@
 module Repo.DeckSpec (spec) where
 
 import Test.Hspec
+import Data.List (sort)
 import Data.Maybe (isJust)
 import Control.Monad (forM_)
 import Database.PostgreSQL.Simple (Connection, Only(..))
@@ -264,6 +265,41 @@ spec = describe "Repo.Deck" $ do
 
         length found `shouldBe` 1
         (head found).name `shouldBe` "Center Game: Hall Variation (white)"
+
+    it "returns all matching H-variations for both full and instant search" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "instantfulluser" "instantfull@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_if_1" :: String, "instantfulluser" :: String, "Center Game: Hall Variation (white)" :: String, True, 10 :: Integer)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_if_2" :: String, "instantfulluser" :: String, "Center Game: Halasz-McDonnell Gambit (white)" :: String, True, 10 :: Integer)
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_if_3" :: String, "instantfulluser" :: String, "Center Game: l'Hermet Variation (black)" :: String, True, 10 :: Integer)
+          return ()
+
+        _ <- runTestApp conn $
+          Repo.Deck.insertOrUpdate (mkTestDeck 0 "Center Game: Hall Variation (white)" "instantfulluser" "udv_if_1")
+        _ <- runTestApp conn $
+          Repo.Deck.insertOrUpdate (mkTestDeck 0 "Center Game: Halasz-McDonnell Gambit (white)" "instantfulluser" "udv_if_2")
+        _ <- runTestApp conn $
+          Repo.Deck.insertOrUpdate (mkTestDeck 0 "Center Game: l'Hermet Variation (black)" "instantfulluser" "udv_if_3")
+
+        fullResult <- runTestApp conn $ Repo.Deck.search (Just "Center Game: H")
+        instantResult <- runTestApp conn $ Repo.Deck.searchInstant (Just "Center Game: H")
+        fullFound <- expectRight fullResult
+        instantFound <- expectRight instantResult
+
+        let expectedNames =
+              sort
+                [ "Center Game: Hall Variation (white)",
+                  "Center Game: Halasz-McDonnell Gambit (white)",
+                  "Center Game: l'Hermet Variation (black)"
+                ]
+        sort (map (.name) fullFound) `shouldBe` expectedNames
+        sort (map (.name) instantFound) `shouldBe` expectedNames
 
   describe "saveRating" $ do
     it "upserts a user's rating and keeps one rating per user/deck" $ do

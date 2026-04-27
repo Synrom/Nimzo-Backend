@@ -105,29 +105,26 @@ search :: MonadDB m => Maybe String -> m [DeckSearchResult]
 search Nothing = return []
 search (Just s)
   | stripped == "" = return []
-  | otherwise = runQuery query (stripped, stripped, stripped, stripped, stripped)
+  | otherwise = runQuery query (Only stripped)
   where
     stripped = trim s
     query :: Query
     query =
-      "SELECT" <> searchReturnFields <>
-      "FROM decks d \
-      \WHERE d.is_public = TRUE \
-      \AND ( \
-      \  d.search_vector @@ plainto_tsquery('english', ?) \
-      \  OR EXISTS ( \
-      \    SELECT 1 \
-      \    FROM regexp_split_to_table(lower(d.name), '[^[:alnum:]]+') AS token \
-      \    WHERE token LIKE lower(?) || '%' \
-      \  ) \
+      "WITH q AS ( \
+      \  SELECT to_tsquery('english', array_to_string(array_agg(token || ':*'), ' & ')) AS tsq \
+      \  FROM regexp_split_to_table(lower(?), '[^[:alnum:]]+') AS t(token) \
+      \  WHERE token <> '' \
       \) \
+      \SELECT" <> searchReturnFields <>
+      "FROM decks d \
+      \CROSS JOIN q \
+      \WHERE d.is_public = TRUE \
+      \AND q.tsq IS NOT NULL \
+      \AND d.search_vector @@ q.tsq \
       \ORDER BY \
-      \  CASE WHEN d.search_vector @@ plainto_tsquery('english', ?) THEN 0 ELSE 1 END, \
-      \  ts_rank(d.search_vector, plainto_tsquery('english', ?)) DESC, \
-      \  NULLIF(strpos(lower(d.name), lower(?)), 0) ASC NULLS LAST, \
+      \  ts_rank(d.search_vector, q.tsq) DESC, \
       \  d.download_count DESC, \
-      \  d.rating_avg DESC NULLS LAST, \
-      \  d.name ASC"
+      \  d.rating_avg DESC NULLS LAST"
 
 find :: MonadDB m => Integer -> m Deck
 find deckId = one =<< runQuery query (Only deckId)
