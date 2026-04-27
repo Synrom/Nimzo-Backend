@@ -178,7 +178,7 @@ spec = describe "Repo.Deck" $ do
         length found `shouldBe` 1
         (head found).name `shouldBe` "Sicilian Defense"
 
-    it "prioritizes prefix word matches over inner-word substring matches in full search" $ do
+    it "matches word-prefix results and ignores inner-word substring-only matches in full search" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "prefixrankuser" "prefixrank@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert user
@@ -196,7 +196,7 @@ spec = describe "Repo.Deck" $ do
         result <- runTestApp conn $ Repo.Deck.search (Just "sic")
         found <- expectRight result
 
-        length found `shouldSatisfy` (>= 2)
+        length found `shouldBe` 1
         (head found).name `shouldBe` "Sicilian Defense"
 
     it "returns enriched search metadata fields" $ do

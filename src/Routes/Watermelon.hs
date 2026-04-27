@@ -164,6 +164,9 @@ mergeError = MergeConflict "Modified objects after last pull."
 unauthorized :: AppError
 unauthorized = Unauthorized "You can only modify views of yourself."
 
+recreatedDeletedDeckError :: AppError
+recreatedDeletedDeckError = MergeConflict "Cannot recreate a deleted deck id."
+
 infeasibleError :: AppError
 infeasibleError = Unauthorized "Number of trials is infeasible."
 
@@ -212,6 +215,8 @@ pushRoute :: AuthenticatedUser -> PushParams -> AppM Success
 pushRoute user PushParams {lastPulledAt, changes} = do
   let since = intToTime lastPulledAt
   validateOwnership user changes
+  recreatedDeletedDecks <- mapM (UserDeckView.wasDeleted user.username . (.udvId)) changes.user_deck_views.created
+  ensure recreatedDeletedDeckError (not (or recreatedDeletedDecks))
   let ucvitems = flattenChangeset created updated (user_card_views changes)
       udvitems = flattenChangeset created updated (user_deck_views changes)
   now <- liftIO getUTCNow

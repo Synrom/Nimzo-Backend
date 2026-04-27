@@ -372,6 +372,45 @@ spec = describe "Routes.Watermelon" $ do
         length success.changes.user_deck_views.deleted `shouldBe` 0
         length success.changes.user_card_views.deleted `shouldBe` 0
 
+    it "rejects recreating a deleted deck id and pull schemaVersion 3 only returns deleted entry" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "recreatedeck" "recreatedeck@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        now <- getCurrentTime
+        let createdAt = intToTime $ floor (utcTimeToPOSIXSeconds now) - 40
+        let deletedAt = floor (utcTimeToPOSIXSeconds now) - 20
+        let betweenCreationAndDeletion = floor (utcTimeToPOSIXSeconds now) - 30
+
+        let originalDeck = mkTestUserDeckView "same_deck_id" "recreatedeck" "Original Deck"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate createdAt originalDeck
+
+        let deleteChanges = Changes
+              { user_card_views = TableChanges [] [] []
+              , user_deck_views = TableChanges [] [] ["same_deck_id"]
+              }
+        let authUser = AUser "recreatedeck" False now
+        deleteResult <- runTestApp conn $ Routes.Watermelon.pushRoute authUser (PushParams deletedAt deleteChanges)
+        _ <- expectRight deleteResult
+
+        let recreatedDeck = mkTestUserDeckView "same_deck_id" "recreatedeck" "Recreated Deck"
+        let recreateChanges = Changes
+              { user_card_views = TableChanges [] [] []
+              , user_deck_views = TableChanges [recreatedDeck] [] []
+              }
+        recreateResult <- runTestApp conn $ Routes.Watermelon.pushRoute authUser (PushParams deletedAt recreateChanges)
+        recreateErr <- expectLeft recreateResult
+        case recreateErr of
+          Internal msg -> msg `shouldBe` "{\"msg\":\"Cannot recreate a deleted deck id.\"}"
+          _ -> expectationFailure "Test Env should throw everything as internal"
+
+        let pullParams = PullParams (Just betweenCreationAndDeletion) 3 Nothing
+        pullResult <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "recreatedeck" pullParams
+        pullResponse <- expectPullResponse pullResult
+
+        pullResponse.changes.user_deck_views.created `shouldBe` []
+        pullResponse.changes.user_deck_views.deleted `shouldContain` ["same_deck_id"]
+
     it "ignores delete ids that do not exist in the backend" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "missingdelete" "missingdelete@example.com" "password"

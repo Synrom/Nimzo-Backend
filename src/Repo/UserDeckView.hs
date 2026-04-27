@@ -69,6 +69,15 @@ modified username since cards = do
     query :: Query
     query = "SELECT" <> returnFields <> "FROM user_deck_views WHERE (created_at > ? OR last_modified > ?) AND user_id = ?"
 
+wasDeleted :: MonadDB m => String -> String -> m Bool
+wasDeleted username unmarkedId = do
+  rows :: [Only Int] <- runQuery query (markedId, username)
+  pure $ notNull rows
+  where
+    markedId = markString username unmarkedId
+    query :: Query
+    query = "SELECT 1 FROM deleted_udvs WHERE id = ? AND user_id = ? LIMIT 1"
+
 insertOrUpdate :: MonadDB m => UTCTime -> UserDeckView -> m UserDeckView
 insertOrUpdate time unmarked = one =<< runQuery query 
     (deck.udvId, deck.userId 
