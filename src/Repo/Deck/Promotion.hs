@@ -21,9 +21,9 @@ import Repo.Classes
 import qualified Repo.Deck.Query as DeckQuery
 import Repo.Deck.Validation
   ( normalizeFeaturedLimit,
+    normalizeNullableString,
     normalizeUsername,
     resolveFeaturedSource,
-    validateFeaturedCardIdRequired,
     validateFeaturedRank,
     validateFeaturedSourceStrict,
     validateVideoUrl,
@@ -69,9 +69,7 @@ upsertPromotion :: MonadDB m => Integer -> DeckPromotionRequest -> m DeckPromoti
 upsertPromotion deckId payload = do
   deck <- DeckQuery.find deckId
   normalizedSource <- fromEither $ validateFeaturedSourceStrict payload.featuredSource
-  normalizedFeaturedCardId <- case normalizedSource of
-    Nothing -> pure Nothing
-    Just _ -> Just <$> fromEither (validateFeaturedCardIdRequired payload.featuredCardId)
+  let normalizedFeaturedCardId = normalizeNullableString payload.featuredCardId
   normalizedRank <- fromEither $ validateFeaturedRank payload.featuredRank
   normalizedVideo <- fromEither $ validateVideoUrl payload.videoUrl
   case normalizedSource of
@@ -83,16 +81,17 @@ upsertPromotion deckId payload = do
         (normalizedRank, normalizedVideo, deckId)
       pure ()
     Just source -> withTransaction $ do
-      let featuredCardId = case normalizedFeaturedCardId of
-            Just cardId -> cardId
-            Nothing -> ""
-      valid <- cardBelongsToDeck deck.user_deck_id featuredCardId
-      ensure (Unauthorized "featuredCardId must belong to the deck.") valid
+      finalFeaturedCardId <- case normalizedFeaturedCardId of
+        Nothing -> pure Nothing
+        Just cardId -> do
+          valid <- cardBelongsToDeck deck.user_deck_id cardId
+          ensure (Unauthorized "featuredCardId must belong to the deck.") valid
+          pure (Just cardId)
       _ <- execute
         "UPDATE decks \
-        \SET featured_source = ?, featured_card_id = ?, featured_rank = ?, video_url = ?, last_modified = CURRENT_TIMESTAMP \
+        \SET featured_source = ?, featured_card_id = COALESCE(?, featured_card_id), featured_rank = ?, video_url = ?, last_modified = CURRENT_TIMESTAMP \
         \WHERE id = ?"
-        (Just (featuredSourceToString source), featuredCardId, normalizedRank, normalizedVideo, deckId)
+        (Just (featuredSourceToString source), finalFeaturedCardId, normalizedRank, normalizedVideo, deckId)
       pure ()
   pure $ DeckPromotionResponse deckId (featuredSourceToString <$> normalizedSource) normalizedFeaturedCardId normalizedRank normalizedVideo
 
