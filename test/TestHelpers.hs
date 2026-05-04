@@ -56,7 +56,6 @@ cleanTestDb :: Connection -> IO ()
 cleanTestDb conn = do
   _ <- execute_ conn "DELETE FROM anonymous_onboarding_progress"
   _ <- execute_ conn "DELETE FROM user_onboarding_preferences"
-  _ <- execute_ conn "DELETE FROM featured_deck_lines"
   _ <- execute_ conn "DELETE FROM decks"
   _ <- execute_ conn "DELETE FROM user_card_views"
   _ <- execute_ conn "DELETE FROM deleted_ucvs"
@@ -105,9 +104,11 @@ ensureTestSchema conn = do
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS image_url VARCHAR(600)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_source VARCHAR(50)"
+  _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_card_id VARCHAR(250)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_rank INTEGER"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS video_url VARCHAR(1000)"
   applySqlFile conn "initdb/13_featured_deck_lines.sql"
+  applySqlFile conn "initdb/14_featured_card_on_decks.sql"
   applySqlFile conn "initdb/07_deck_search_metadata.sql"
   applySqlFile conn "initdb/08_deck_search_metadata_functions_triggers.sql"
   applySqlFile conn "initdb/09_deck_search_metadata_backfill.sql"
@@ -212,6 +213,7 @@ mkTestDeck did dname author userDeckId = Deck
   , Models.Deck.user_deck_id = userDeckId
   , Models.Deck.imageUrl = Nothing
   , Models.Deck.featuredSource = Nothing
+  , Models.Deck.featuredCardId = Nothing
   , Models.Deck.featuredRank = Nothing
   , Models.Deck.videoUrl = Nothing
   }

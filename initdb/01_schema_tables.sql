@@ -98,6 +98,7 @@ CREATE TABLE decks (
   color VARCHAR(2),
   image_url VARCHAR(600),
   featured_source VARCHAR(50),
+  featured_card_id VARCHAR(250),
   featured_rank INTEGER,
   video_url VARCHAR(1000),
   author VARCHAR(250) NOT NULL REFERENCES users(username),
