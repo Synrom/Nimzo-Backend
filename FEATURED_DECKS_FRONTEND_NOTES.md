@@ -36,7 +36,9 @@ Payload fields:
 - `videoUrl` (`string|null`)
 
 Rules:
-- If `featuredSource` is set, `featuredCardId` is required.
+- If `featuredSource` is set, `featuredCardId` is optional.
+- If `featuredCardId` is provided, backend validates ownership (must belong to the deck).
+- If `featuredCardId` is omitted, backend keeps the current value (which may be null).
 - If `featuredSource` is `null`, backend clears `featured_card_id`.
 
 ### Get deck cards

@@ -441,6 +441,23 @@ spec = describe "Repo.Deck" $ do
           (Repo.Deck.savePromotion "promoauthor3" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "missing_card") (Just 1) (Just "ftp://example.com/video.mp4")))
         result `shouldSatisfy` isLeft'
 
+    it "allows setting featured source without featuredCardId" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "promoauthor4" "promoauthor4@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_promo4" :: String, "promoauthor4" :: String, "Promo Deck 4" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 4" "promoauthor4" "udv_promo4"))
+
+        response <- expectRight =<< runTestApp conn
+          (Repo.Deck.savePromotion "promoauthor4" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") Nothing (Just 5) Nothing))
+        let DeckPromotionResponse _ source featuredCardId rank _ = response
+        source `shouldBe` Just "tiktok"
+        featuredCardId `shouldBe` Nothing
+        rank `shouldBe` Just 5
+
     it "rejects promotion moderation for non-moderators" $ do
       withCleanDb $ \conn -> do
         let author = mkTestUser "promomodauthor" "promomodauthor@example.com" "password"
