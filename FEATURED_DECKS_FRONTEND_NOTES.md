@@ -32,13 +32,16 @@ You can set both at the same write endpoint:
 Payload fields:
 - `featuredSource` (`tiktok|instagram|youtube|x|null`)
 - `featuredCardId` (`string|null`)
+- `featuredMoves` (`string|null`)
 - `featuredRank` (`number|null`)
 - `videoUrl` (`string|null`)
 
 Rules:
 - If `featuredSource` is set, `featuredCardId` is optional.
 - If `featuredCardId` is provided, backend validates ownership (must belong to the deck).
-- If `featuredCardId` is omitted, backend keeps the current value (which may be null).
+- If `featuredCardId` is omitted but `featuredMoves` is provided, backend tries to infer the card from deck cards by exact moves match.
+- If inference by `featuredMoves` fails, backend returns an error.
+- If both `featuredCardId` and `featuredMoves` are omitted, backend keeps the current value (which may be null).
 - If `featuredSource` is `null`, backend clears `featured_card_id`.
 
 ### Get deck cards

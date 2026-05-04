@@ -400,7 +400,7 @@ spec = describe "Repo.Deck" $ do
           return ()
 
         response <- expectRight =<< runTestApp conn
-          (Repo.Deck.savePromotion "promoauthor" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "promo_card_1") (Just 3) (Just "https://example.com/promo.mp4")))
+          (Repo.Deck.savePromotion "promoauthor" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "promo_card_1") Nothing (Just 3) (Just "https://example.com/promo.mp4")))
         let DeckPromotionResponse _ source featuredCardId rank video = response
         source `shouldBe` Just "tiktok"
         featuredCardId `shouldBe` Just "promo_card_1"
@@ -422,7 +422,7 @@ spec = describe "Repo.Deck" $ do
             ("promo2_card_1" :: String, "promoauthor2" :: String, "udv_promo2" :: String, "d4 d5" :: String, "Promo2 Card 1" :: String, "wh" :: String, 0 :: Integer)
           return ()
         result <- runTestApp conn
-          (Repo.Deck.savePromotion "promoauthor2" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "youtube") (Just "promo2_card_1") (Just 1) Nothing))
+          (Repo.Deck.savePromotion "promoauthor2" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "youtube") (Just "promo2_card_1") Nothing (Just 1) Nothing))
         saved <- expectRight result
         let DeckPromotionResponse _ source2 _ _ _ = saved
         source2 `shouldBe` Just "youtube"
@@ -438,7 +438,7 @@ spec = describe "Repo.Deck" $ do
         deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 3" "promoauthor3" "udv_promo3"))
 
         result <- runTestApp conn
-          (Repo.Deck.savePromotion "promoauthor3" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "missing_card") (Just 1) (Just "ftp://example.com/video.mp4")))
+          (Repo.Deck.savePromotion "promoauthor3" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "missing_card") Nothing (Just 1) (Just "ftp://example.com/video.mp4")))
         result `shouldSatisfy` isLeft'
 
     it "allows setting featured source without featuredCardId" $ do
@@ -452,11 +452,43 @@ spec = describe "Repo.Deck" $ do
         deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 4" "promoauthor4" "udv_promo4"))
 
         response <- expectRight =<< runTestApp conn
-          (Repo.Deck.savePromotion "promoauthor4" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") Nothing (Just 5) Nothing))
+          (Repo.Deck.savePromotion "promoauthor4" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") Nothing Nothing (Just 5) Nothing))
         let DeckPromotionResponse _ source featuredCardId rank _ = response
         source `shouldBe` Just "tiktok"
         featuredCardId `shouldBe` Nothing
         rank `shouldBe` Just 5
+
+    it "infers featuredCardId from featuredMoves when provided" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "promoauthor5" "promoauthor5@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_promo5" :: String, "promoauthor5" :: String, "Promo Deck 5" :: String, True, 1 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("promo5_card_1" :: String, "promoauthor5" :: String, "udv_promo5" :: String, "e4 c5 Nf3 d6" :: String, "Promo5 Card 1" :: String, "wh" :: String, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 5" "promoauthor5" "udv_promo5"))
+
+        response <- expectRight =<< runTestApp conn
+          (Repo.Deck.savePromotion "promoauthor5" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") Nothing (Just "e4 c5 Nf3 d6") (Just 7) Nothing))
+        let DeckPromotionResponse _ _ featuredCardId rank _ = response
+        featuredCardId `shouldBe` Just "promo5_card_1"
+        rank `shouldBe` Just 7
+
+    it "fails when featuredMoves does not match a card in deck" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "promoauthor6" "promoauthor6@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_promo6" :: String, "promoauthor6" :: String, "Promo Deck 6" :: String, True, 0 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 6" "promoauthor6" "udv_promo6"))
+
+        result <- runTestApp conn
+          (Repo.Deck.savePromotion "promoauthor6" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") Nothing (Just "c4 e5 Nc3") (Just 1) Nothing))
+        result `shouldSatisfy` isLeft'
 
     it "rejects promotion moderation for non-moderators" $ do
       withCleanDb $ \conn -> do
@@ -472,7 +504,7 @@ spec = describe "Repo.Deck" $ do
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = NULL, featured_rank = NULL, video_url = NULL WHERE id = ?" (Only $ Models.Deck.deckId deck)
 
         result <- runTestApp conn
-          (Repo.Deck.savePromotionByModerator "mod1" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "missing_card") (Just 2) Nothing))
+          (Repo.Deck.savePromotionByModerator "mod1" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "missing_card") Nothing (Just 2) Nothing))
         result `shouldSatisfy` isLeft'
 
   describe "listFeatured" $ do
@@ -584,7 +616,7 @@ spec = describe "Repo.Deck" $ do
             ("fcons_card_2" :: String, "featuredconsistency" :: String, "udv_featured_consistency" :: String, "d4 d5" :: String, "FCONS Card 2" :: String, "wh" :: String, 0 :: Integer)
           return ()
         _ <- expectRight =<< runTestApp conn
-          (Repo.Deck.savePromotion "featuredconsistency" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "fcons_card_2") (Just 1) Nothing))
+          (Repo.Deck.savePromotion "featuredconsistency" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "fcons_card_2") Nothing (Just 1) Nothing))
 
         featuredDecks <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 10))
         let selected = filter (\d -> d.deckId == Models.Deck.deckId deck) featuredDecks
