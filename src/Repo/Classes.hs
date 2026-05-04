@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -12,7 +14,7 @@ import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Exception
 import Servant
-import Database.PostgreSQL.Simple as Postgres
+import qualified Database.PostgreSQL.Simple as Postgres
 import Network.Mail.Mime (Mail)
 import Servant.Auth.Server (JWTSettings)
 import App.Env
@@ -24,12 +26,13 @@ type MonadApp m = (MonadError AppError m, MonadIO m)
 
 class MonadApp m => MonadDB m where
   askEnv :: m Env
-  runQuery :: (ToRow q, FromRow r) => Query -> q -> m [r]
-  execute :: ToRow q => Query -> q -> m Int64
+  runQuery :: (Postgres.ToRow q, Postgres.FromRow r) => Postgres.Query -> q -> m [r]
+  execute :: Postgres.ToRow q => Postgres.Query -> q -> m Int64
+  withTransaction :: m a -> m a
 
 runIOorThrow :: (MonadIO m, MonadError AppError m) => IO a -> m a
 runIOorThrow io = do
-  r <- liftIO $ try @SqlError io
+  r <- liftIO $ try @Postgres.SqlError io
   either (liftIO . fromSqlError >=> throwError) pure r
 
 instance MonadDB AppM where
@@ -40,6 +43,13 @@ instance MonadDB AppM where
   execute q ps = do
     env <- ask
     runIOorThrow $ withConn env (\c -> Postgres.execute c q ps)
+  withTransaction action = do
+    _ <- execute "BEGIN" ()
+    result <- action `catchError` \err -> do
+      _ <- execute "ROLLBACK" ()
+      throwError err
+    _ <- execute "COMMIT" ()
+    pure result
 
 class MonadApp m => MonadMail m where
   sendMail :: Mail -> m ()

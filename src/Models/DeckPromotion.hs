@@ -8,6 +8,7 @@ import GHC.Generics (Generic)
 
 data DeckPromotionRequest = DeckPromotionRequest
   { featuredSource :: Maybe String
+  , featuredCardId :: Maybe String
   , featuredRank :: Maybe Integer
   , videoUrl :: Maybe String
   }
@@ -16,6 +17,7 @@ data DeckPromotionRequest = DeckPromotionRequest
 data DeckPromotionResponse = DeckPromotionResponse
   { deckId :: Integer
   , featuredSource :: Maybe String
+  , featuredCardId :: Maybe String
   , featuredRank :: Maybe Integer
   , videoUrl :: Maybe String
   }

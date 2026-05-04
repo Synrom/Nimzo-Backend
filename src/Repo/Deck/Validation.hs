@@ -9,6 +9,7 @@ module Repo.Deck.Validation
     validateDeckImagePayload,
     validateFeaturedSourceStrict,
     resolveFeaturedSource,
+    validateFeaturedCardIdRequired,
     validateFeaturedRank,
     validateVideoUrl,
     normalizeUsername,
@@ -24,6 +25,7 @@ import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BS8
 import Data.String.HT (trim)
 import Models.DeckImage (DeckImageUploadRequest (..))
+import Models.FeaturedSource (FeaturedSource (..), parseFeaturedSource)
 import Network.URI (parseURI, uriScheme)
 
 maxDeckImageBytes :: Int
@@ -45,22 +47,32 @@ normalizePublicBase raw = case reverse raw of
 normalizeFeaturedSource :: Maybe String -> Maybe String
 normalizeFeaturedSource = fmap (map toLower . trim) . normalizeNullableString
 
+normalizeFeaturedSourceTyped :: Maybe String -> Maybe FeaturedSource
+normalizeFeaturedSourceTyped maybeRaw = normalizeFeaturedSource maybeRaw >>= parseFeaturedSource
+
 normalizeFeaturedLimit :: Maybe Integer -> Integer
 normalizeFeaturedLimit maybeLimit =
   let requested = fromMaybe 20 maybeLimit
    in max 1 (min 50 requested)
 
-validateFeaturedSourceStrict :: Maybe String -> Either AppError (Maybe String)
-validateFeaturedSourceStrict maybeRaw = case normalizeFeaturedSource maybeRaw of
-  Nothing -> Right Nothing
-  Just "tiktok" -> Right (Just "tiktok")
-  _ -> Left $ Unauthorized "Invalid featured source. Use 'tiktok' or null."
+validateFeaturedSourceStrict :: Maybe String -> Either AppError (Maybe FeaturedSource)
+validateFeaturedSourceStrict maybeRaw = case normalizeFeaturedSourceTyped maybeRaw of
+  Nothing
+    | normalizeNullableString maybeRaw == Nothing -> Right Nothing
+    | otherwise -> Left $ Unauthorized "Invalid featured source. Use 'tiktok', 'instagram', 'youtube', 'x' or null."
+  Just source -> Right (Just source)
 
-resolveFeaturedSource :: Maybe String -> Either AppError String
-resolveFeaturedSource maybeRaw = case normalizeFeaturedSource maybeRaw of
-  Nothing -> Right "tiktok"
-  Just "tiktok" -> Right "tiktok"
-  _ -> Left $ Unauthorized "Invalid featured source. Use 'tiktok'."
+resolveFeaturedSource :: Maybe String -> Either AppError FeaturedSource
+resolveFeaturedSource maybeRaw = case normalizeFeaturedSourceTyped maybeRaw of
+  Nothing
+    | normalizeNullableString maybeRaw == Nothing -> Right FeaturedSourceTikTok
+    | otherwise -> Left $ Unauthorized "Invalid featured source. Use 'tiktok', 'instagram', 'youtube', or 'x'."
+  Just source -> Right source
+
+validateFeaturedCardIdRequired :: Maybe String -> Either AppError String
+validateFeaturedCardIdRequired maybeRaw = case normalizeNullableString maybeRaw of
+  Just cardId -> Right cardId
+  Nothing -> Left $ Unauthorized "featuredCardId is required when featuredSource is set."
 
 validateFeaturedRank :: Maybe Integer -> Either AppError (Maybe Integer)
 validateFeaturedRank Nothing = Right Nothing

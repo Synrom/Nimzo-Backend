@@ -394,10 +394,16 @@ spec = describe "Repo.Deck" $ do
           return ()
         deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck" "promoauthor" "udv_promo1"))
 
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("promo_card_1" :: String, "promoauthor" :: String, "udv_promo1" :: String, "e4 e5" :: String, "Promo Card 1" :: String, "wh" :: String, 0 :: Integer)
+          return ()
+
         response <- expectRight =<< runTestApp conn
-          (Repo.Deck.savePromotion "promoauthor" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just 3) (Just "https://example.com/promo.mp4")))
-        let DeckPromotionResponse _ source rank video = response
+          (Repo.Deck.savePromotion "promoauthor" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "promo_card_1") (Just 3) (Just "https://example.com/promo.mp4")))
+        let DeckPromotionResponse _ source featuredCardId rank video = response
         source `shouldBe` Just "tiktok"
+        featuredCardId `shouldBe` Just "promo_card_1"
         rank `shouldBe` Just 3
         video `shouldBe` Just "https://example.com/promo.mp4"
 
@@ -411,9 +417,15 @@ spec = describe "Repo.Deck" $ do
           return ()
         deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 2" "promoauthor2" "udv_promo2"))
 
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("promo2_card_1" :: String, "promoauthor2" :: String, "udv_promo2" :: String, "d4 d5" :: String, "Promo2 Card 1" :: String, "wh" :: String, 0 :: Integer)
+          return ()
         result <- runTestApp conn
-          (Repo.Deck.savePromotion "promoauthor2" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "youtube") (Just 1) Nothing))
-        result `shouldSatisfy` isLeft'
+          (Repo.Deck.savePromotion "promoauthor2" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "youtube") (Just "promo2_card_1") (Just 1) Nothing))
+        saved <- expectRight result
+        let DeckPromotionResponse _ source2 _ _ _ = saved
+        source2 `shouldBe` Just "youtube"
 
     it "rejects invalid video url" $ do
       withCleanDb $ \conn -> do
@@ -426,7 +438,7 @@ spec = describe "Repo.Deck" $ do
         deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Promo Deck 3" "promoauthor3" "udv_promo3"))
 
         result <- runTestApp conn
-          (Repo.Deck.savePromotion "promoauthor3" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just 1) (Just "ftp://example.com/video.mp4")))
+          (Repo.Deck.savePromotion "promoauthor3" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "missing_card") (Just 1) (Just "ftp://example.com/video.mp4")))
         result `shouldSatisfy` isLeft'
 
     it "rejects promotion moderation for non-moderators" $ do
@@ -443,7 +455,7 @@ spec = describe "Repo.Deck" $ do
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = NULL, featured_rank = NULL, video_url = NULL WHERE id = ?" (Only $ Models.Deck.deckId deck)
 
         result <- runTestApp conn
-          (Repo.Deck.savePromotionByModerator "mod1" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just 2) Nothing))
+          (Repo.Deck.savePromotionByModerator "mod1" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "missing_card") (Just 2) Nothing))
         result `shouldSatisfy` isLeft'
 
   describe "listFeatured" $ do
@@ -466,12 +478,17 @@ spec = describe "Repo.Deck" $ do
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 2 WHERE id = ?" (Only $ Models.Deck.deckId deckA)
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 1 WHERE id = ?" (Only $ Models.Deck.deckId deckB)
         _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'tiktok', featured_rank = 3 WHERE id = ?" (Only $ Models.Deck.deckId deckC)
+        _ <- runTestApp conn $ execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+          ("featured_card_b" :: String, "featureduser" :: String, "udv_featured_b" :: String, "e4 e5" :: String, "Featured Card B" :: String, "wh" :: String, 0 :: Integer)
+        _ <- runTestApp conn $ execute "INSERT INTO featured_deck_lines (deck_id, featured_card_id) VALUES (?, ?)"
+          (Models.Deck.deckId deckB, "featured_card_b" :: String)
         _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-01-01 00:00:00+00" :: String, Models.Deck.deckId deckA)
         _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-02-01 00:00:00+00" :: String, Models.Deck.deckId deckB)
         _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-03-01 00:00:00+00" :: String, Models.Deck.deckId deckC)
 
         featured <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 2))
         map (.name) featured `shouldBe` ["Featured C", "Featured B"]
+        map (.featuredCardId) featured `shouldBe` [Nothing, Just "featured_card_b"]
 
   describe "find" $ do
     it "finds deck by ID" $ do
@@ -534,6 +551,36 @@ spec = describe "Repo.Deck" $ do
         Models.DeckDetails.userRating details `shouldBe` Just 5
 
   describe "listCardsOfDeck" $ do
+    it "keeps featured deck and cards responses consistent" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "featuredconsistency" "featuredconsistency@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_featured_consistency" :: String, "featuredconsistency" :: String, "Featured Consistency Deck" :: String, True, 2 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Featured Consistency Deck" "featuredconsistency" "udv_featured_consistency"))
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("fcons_card_1" :: String, "featuredconsistency" :: String, "udv_featured_consistency" :: String, "e4 e5" :: String, "FCONS Card 1" :: String, "wh" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("fcons_card_2" :: String, "featuredconsistency" :: String, "udv_featured_consistency" :: String, "d4 d5" :: String, "FCONS Card 2" :: String, "wh" :: String, 0 :: Integer)
+          return ()
+        _ <- expectRight =<< runTestApp conn
+          (Repo.Deck.savePromotion "featuredconsistency" (Models.Deck.deckId deck) (DeckPromotionRequest (Just "tiktok") (Just "fcons_card_2") (Just 1) Nothing))
+
+        featuredDecks <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 10))
+        let selected = filter (\d -> d.deckId == Models.Deck.deckId deck) featuredDecks
+        length selected `shouldBe` 1
+        let featuredCard = (head selected).featuredCardId
+        featuredCard `shouldBe` Just "fcons_card_2"
+
+        paged <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck (CardQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
+        let featuredCards = filter (\(Card _ _ _ _ featured) -> featured) (cards paged)
+        length featuredCards `shouldBe` 1
+        let Card _ _ _ featuredCardId' _ = head featuredCards
+        Just featuredCardId' `shouldBe` featuredCard
+
     it "returns empty list when deck has no cards" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "cardsuser" "cards@example.com" "password"
@@ -578,6 +625,8 @@ spec = describe "Repo.Deck" $ do
         pagedCards <- expectRight result
 
         length (cards pagedCards) `shouldBe` 3
+        map (\c -> not (null (cardId c))) (cards pagedCards) `shouldBe` [True, True, True]
+        map (\(Card _ _ _ _ featured) -> featured) (cards pagedCards) `shouldBe` [False, False, False]
         next_cursor pagedCards `shouldSatisfy` isJust
 
     it "enforces maximum limit of 100" $ do
@@ -599,6 +648,27 @@ spec = describe "Repo.Deck" $ do
         -- Should not fail, just limit to 100
         _ <- expectRight result
         return ()
+
+    it "marks the featured card in cards response" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "featuredcardsuser" "featuredcards@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_featured_cards" :: String, "featuredcardsuser" :: String, "Featured Cards Deck" :: String, True, 2 :: Integer)
+          return ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Featured Cards Deck" "featuredcardsuser" "udv_featured_cards"))
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("fc_card_1" :: String, "featuredcardsuser" :: String, "udv_featured_cards" :: String, "e4 e5" :: String, "FC Card 1" :: String, "wh" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("fc_card_2" :: String, "featuredcardsuser" :: String, "udv_featured_cards" :: String, "d4 d5" :: String, "FC Card 2" :: String, "wh" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO featured_deck_lines (deck_id, featured_card_id) VALUES (?, ?)"
+            (Models.Deck.deckId deck, "fc_card_2" :: String)
+          return ()
+        paged <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck (CardQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
+        let cardFlags = map (\(Card _ _ _ cardId' featured) -> (cardId', featured)) (cards paged)
+        cardFlags `shouldBe` [("fc_card_1", False), ("fc_card_2", True)]
 
     it "increments deck download_count when cursor is not set" $ do
       withCleanDb $ \conn -> do

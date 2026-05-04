@@ -29,6 +29,7 @@ library
       Models.DeckPromotion,
       Models.DeckRating,
       Models.DeckSearch,
+      Models.FeaturedSource,
       Models.Card, 
       Models.Rank, 
       Models.UserCardView,

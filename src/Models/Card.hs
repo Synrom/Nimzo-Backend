@@ -20,7 +20,9 @@ data CardQuery = CardQuery
 data Card  = Card
   { moves :: String,
     title :: String,
-    color :: String
+    color :: String,
+    cardId :: String,
+    isFeatured :: Bool
   }
   deriving (Eq, Show, Generic)
 
@@ -28,7 +30,8 @@ data PendingCard = PendingCard
   { moves :: String,
     title :: String,
     color :: String,
-    id    :: String
+    id    :: String,
+    isFeatured :: Bool
   }
   deriving (Eq, Show, Generic)
 
@@ -43,4 +46,3 @@ instance ToJSON Card
 instance ToJSON PagedCards
 instance FromRow Card
 instance FromRow PendingCard
-
