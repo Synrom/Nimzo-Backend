@@ -10,6 +10,7 @@ where
 
 import Control.Monad.Except (MonadError, throwError)
 import Data.List (elem)
+import Database.PostgreSQL.Simple (Only(..))
 import App.Env (deckPromotionModerators)
 import App.Error (AppError (Unauthorized))
 import qualified Models.Deck as DeckModel
@@ -37,8 +38,8 @@ listFeatured maybeSource maybeLimit = do
   where
     query =
       "SELECT" <> DeckQuery.searchReturnFields <>
-      DeckQuery.searchFromClause <>
-      "WHERE d.is_public = TRUE \
+      "FROM decks d \
+      \WHERE d.is_public = TRUE \
       \AND d.featured_source = ? \
       \ORDER BY d.created_at DESC, COALESCE(d.featured_rank, 2147483647) ASC, d.download_count DESC, d.rating_avg DESC NULLS LAST, d.name ASC \
       \LIMIT ?"
@@ -76,41 +77,33 @@ upsertPromotion deckId payload = do
   case normalizedSource of
     Nothing -> withTransaction $ do
       _ <- execute
-        "WITH updated AS ( \
-        \  UPDATE decks \
-        \  SET featured_source = ?, featured_rank = ?, video_url = ?, last_modified = CURRENT_TIMESTAMP \
-        \  WHERE id = ? \
-        \  RETURNING id \
-        \) \
-        \DELETE FROM featured_deck_lines fdl \
-        \USING updated \
-        \WHERE fdl.deck_id = updated.id"
-        (Nothing :: Maybe String, normalizedRank, normalizedVideo, deckId)
+        "UPDATE decks \
+        \SET featured_source = NULL, featured_card_id = NULL, featured_rank = ?, video_url = ?, last_modified = CURRENT_TIMESTAMP \
+        \WHERE id = ?"
+        (normalizedRank, normalizedVideo, deckId)
       pure ()
     Just source -> withTransaction $ do
       let featuredCardId = case normalizedFeaturedCardId of
             Just cardId -> cardId
             Nothing -> ""
-      affected <- execute
-        "WITH updated AS ( \
-        \  UPDATE decks \
-        \  SET featured_source = ?, featured_rank = ?, video_url = ?, last_modified = CURRENT_TIMESTAMP \
-        \  WHERE id = ? \
-        \  RETURNING id \
-        \), verified_card AS ( \
-        \  SELECT 1 AS ok \
-        \  FROM user_card_views ucv \
-        \  WHERE ucv.id = ? \
-        \    AND ucv.user_deck_id = ? \
-        \) \
-        \INSERT INTO featured_deck_lines (deck_id, featured_card_id) \
-        \SELECT updated.id, ? \
-        \FROM updated, verified_card \
-        \ON CONFLICT (deck_id) DO UPDATE \
-        \SET featured_card_id = EXCLUDED.featured_card_id, last_modified = CURRENT_TIMESTAMP"
-        (Just (featuredSourceToString source), normalizedRank, normalizedVideo, deckId, featuredCardId, deck.user_deck_id, featuredCardId)
-      ensure (Unauthorized "featuredCardId must belong to the deck.") (affected > 0)
+      valid <- cardBelongsToDeck deck.user_deck_id featuredCardId
+      ensure (Unauthorized "featuredCardId must belong to the deck.") valid
+      _ <- execute
+        "UPDATE decks \
+        \SET featured_source = ?, featured_card_id = ?, featured_rank = ?, video_url = ?, last_modified = CURRENT_TIMESTAMP \
+        \WHERE id = ?"
+        (Just (featuredSourceToString source), featuredCardId, normalizedRank, normalizedVideo, deckId)
+      pure ()
   pure $ DeckPromotionResponse deckId (featuredSourceToString <$> normalizedSource) normalizedFeaturedCardId normalizedRank normalizedVideo
+
+cardBelongsToDeck :: MonadDB m => String -> String -> m Bool
+cardBelongsToDeck userDeckId cardId = do
+  result <- runQuery
+    "SELECT EXISTS (SELECT 1 FROM user_card_views WHERE id = ? AND user_deck_id = ?)"
+    (cardId, userDeckId)
+  pure $ case result of
+    [Only exists] -> exists
+    _ -> False
 
 fromEither :: MonadError e m => Either e a -> m a
 fromEither = either throwError pure

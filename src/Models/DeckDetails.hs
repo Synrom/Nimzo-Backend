@@ -19,6 +19,7 @@ data DeckDetails = DeckDetails
     user_deck_id :: String,
     imageUrl :: Maybe String,
     featuredSource :: Maybe String,
+    featuredCardId :: Maybe String,
     featuredRank :: Maybe Integer,
     videoUrl :: Maybe String,
     hasRated :: Bool,

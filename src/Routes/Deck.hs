@@ -43,6 +43,7 @@ type SecureAPI =
   :<|> "deck" :> Capture "id" Integer :> "rating" :> ReqBody '[JSON] DeckRatingRequest :> Post '[JSON] JsonableMsg
   :<|> "deck" :> Capture "id" Integer :> "image" :> ReqBody '[JSON] DeckImageUploadRequest :> Post '[JSON] DeckImageUploadResponse
   :<|> "deck" :> Capture "id" Integer :> "promotion" :> ReqBody '[JSON] DeckPromotionRequest :> Post '[JSON] DeckPromotionResponse
+  :<|> "deck" :> "featured" :> Capture "id" Integer :> ReqBody '[JSON] DeckPromotionRequest :> Post '[JSON] DeckPromotionResponse
   :<|> "deck" :> Capture "id" Integer :> "promotion" :> "moderate" :> ReqBody '[JSON] DeckPromotionRequest :> Post '[JSON] DeckPromotionResponse
 
 type Server =
@@ -57,6 +58,7 @@ type SecureServer =
   (Integer -> AppM DeckDetails)
   :<|> (Integer -> DeckRatingRequest -> AppM JsonableMsg)
   :<|> (Integer -> DeckImageUploadRequest -> AppM DeckImageUploadResponse)
+  :<|> (Integer -> DeckPromotionRequest -> AppM DeckPromotionResponse)
   :<|> (Integer -> DeckPromotionRequest -> AppM DeckPromotionResponse)
   :<|> (Integer -> DeckPromotionRequest -> AppM DeckPromotionResponse)
 
@@ -74,6 +76,7 @@ secureServer auth =
   (\deckId -> Repo.Deck.findWithRating (fmap (.username) authenticatedUser) deckId)
   :<|> ratingHandler
   :<|> imageUploadHandler
+  :<|> promotionHandler
   :<|> promotionHandler
   :<|> moderationHandler
   where

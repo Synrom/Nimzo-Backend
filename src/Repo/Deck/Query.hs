@@ -5,7 +5,6 @@
 module Repo.Deck.Query
   ( returnFields,
     searchReturnFields,
-    searchFromClause,
     insertOrUpdate,
     search,
     searchInstant,
@@ -32,10 +31,10 @@ import Models.DeckSearch (DeckSearchResult, SearchContinuation (..), SearchConti
 import Models.Watermelon (JsonableMsg (Msg))
 
 returnFields :: Query
-returnFields = " id, name, is_public, description, color, num_cards_total, author, user_deck_id, image_url, featured_source, featured_rank, video_url "
+returnFields = " id, name, is_public, description, color, num_cards_total, author, user_deck_id, image_url, featured_source, featured_card_id, featured_rank, video_url "
 
 qualifiedReturnFields :: Query
-qualifiedReturnFields = " d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_rank, d.video_url "
+qualifiedReturnFields = " d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_card_id, d.featured_rank, d.video_url "
 
 searchReturnFields :: Query
 searchReturnFields =
@@ -44,7 +43,7 @@ searchReturnFields =
   \, d.author, d.user_deck_id \
   \, d.image_url \
   \, d.featured_source \
-  \, fdl.featured_card_id AS featured_card_id \
+  \, d.featured_card_id \
   \, d.featured_rank \
   \, d.video_url \
   \, d.rating_avg \
@@ -56,11 +55,6 @@ searchReturnFields =
   \    WHEN lower(COALESCE(d.color, '')) IN ('b', 'bl', 'black') THEN 'Black repertoire' \
   \    ELSE 'Both sides' \
   \  END AS repertoire "
-
-searchFromClause :: Query
-searchFromClause =
-  "FROM decks d \
-  \LEFT JOIN featured_deck_lines fdl ON fdl.deck_id = d.id "
 
 insertOrUpdate :: MonadDB m => Deck -> m Deck
 insertOrUpdate deck =
@@ -100,8 +94,8 @@ searchInstant (Just s)
       \  WHERE token <> '' \
       \) \
       \SELECT" <> searchReturnFields <>
-      searchFromClause <>
-      "CROSS JOIN q \
+      "FROM decks d \
+      \CROSS JOIN q \
       \WHERE d.is_public = TRUE \
       \AND q.tsq IS NOT NULL \
       \AND d.search_vector_name @@ q.tsq \
@@ -123,8 +117,8 @@ search (Just s)
       \  WHERE token <> '' \
       \) \
       \SELECT" <> searchReturnFields <>
-      searchFromClause <>
-      "CROSS JOIN q \
+      "FROM decks d \
+      \CROSS JOIN q \
       \WHERE d.is_public = TRUE \
       \AND q.tsq IS NOT NULL \
       \AND d.search_vector @@ q.tsq \
@@ -144,7 +138,7 @@ findWithRating username deckId = one =<< runQuery query (username, deckId)
   where
     query :: Query
     query =
-      "SELECT d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_rank, d.video_url \
+      "SELECT d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_card_id, d.featured_rank, d.video_url \
       \, COALESCE(dr.user_id IS NOT NULL, FALSE) AS has_rated \
       \, dr.rating AS user_rating \
       \FROM decks d \
@@ -164,7 +158,7 @@ paginateCards pendingCards = case safeLast pendingCards of
   Nothing -> PagedCards Nothing cards
   Just card -> PagedCards (Just card.id) cards
   where
-    unpend (PendingCard moves title color cardId isFeatured) = Card moves title color cardId isFeatured
+    unpend (PendingCard moves title color _) = Card moves title color
     cards = map unpend pendingCards
 
 buildContinuationQuery :: Query -> Query -> [Action] -> String -> (Query, [Action])
@@ -239,7 +233,7 @@ buildDecksQuery prefix mColor mLimit =
             [toField prefix, toField prefix]
           )
     orderSql =
-      " GROUP BY d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_rank, d.video_url \
+      " GROUP BY d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_card_id, d.featured_rank, d.video_url \
       \ORDER BY COUNT(*) DESC, d.name"
     limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
     limitSql
@@ -285,14 +279,14 @@ listCardsOfDeck rawQuery = do
       _ <- execute "UPDATE decks SET download_count = download_count + 1 WHERE id = ?" (Only cardQuery.deckId)
       pure ()
     Just _ -> pure ()
-  let finalParams = [toField cardQuery.deckId, toField deck.user_deck_id] <> cursorParams <> prefixParams <> [toField cardQuery.limit]
+  let finalParams = [toField deck.user_deck_id] <> cursorParams <> prefixParams <> [toField cardQuery.limit]
   paginateCards <$> runQuery finalSql finalParams
   where
-    fields = " ucv.moves, ucv.title, ucv.color, ucv.id, (fdl.featured_card_id IS NOT NULL AND fdl.featured_card_id = ucv.id) AS is_featured "
-    baseSql = "SELECT" <> fields <> "FROM user_card_views ucv LEFT JOIN featured_deck_lines fdl ON fdl.deck_id = ? WHERE ucv.user_deck_id=?"
+    fields = " moves, title, color, id "
+    baseSql = "SELECT" <> fields <> "FROM user_card_views WHERE user_deck_id=?"
     (cursorCondition, cursorParams) = case rawQuery.cursor of
       Nothing -> ("", [])
-      Just next -> (" AND ucv.id > ?", [toField next])
+      Just next -> (" AND id > ?", [toField next])
     (prefixCondition, prefixParams) = case rawQuery.prefix of
       Nothing -> ("", [])
       Just p -> (" AND (moves = ? OR moves LIKE ? || ' %')", [toField p, toField p])
