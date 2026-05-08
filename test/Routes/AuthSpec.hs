@@ -26,6 +26,7 @@ import qualified Routes.Onboarding as OnboardingRoutes
 import Repo.User
 import qualified Repo.UserIdentity as UserIdentity
 import Models.User
+import qualified Models.UserIdentity
 import Models.SocialAuth
 import Models.Onboarding
 import Models.Watermelon (JsonableMsg(..))
@@ -102,6 +103,32 @@ spec = describe "Routes.Auth" $ do
         result <- runTestApp conn $ Routes.Auth.createUser user
         result `shouldSatisfy` isLeft'
 
+    it "uses default ELO when not provided" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "default-elo-user" "default-elo@example.com" "password"
+        _ <- expectRight =<< runTestApp conn (Routes.Auth.createUser user)
+
+        stored <- expectRight =<< runTestApp conn (Repo.User.findUsername "default-elo-user")
+        case stored of
+          Nothing -> expectationFailure "Expected user to be stored"
+          Just dbUser -> dbUser.xp `shouldBe` 10
+
+    it "accepts ELO exactly 50" $ do
+      withCleanDb $ \conn -> do
+        let user = (mkTestUser "elo-50-user" "elo-50@example.com" "password") { Models.User.elo = Just 50 }
+        _ <- expectRight =<< runTestApp conn (Routes.Auth.createUser user)
+
+        stored <- expectRight =<< runTestApp conn (Repo.User.findUsername "elo-50-user")
+        case stored of
+          Nothing -> expectationFailure "Expected user to be stored"
+          Just dbUser -> dbUser.xp `shouldBe` 50
+
+    it "rejects ELO greater than 50" $ do
+      withCleanDb $ \conn -> do
+        let user = (mkTestUser "elo-51-user" "elo-51@example.com" "password") { Models.User.elo = Just 51 }
+        result <- runTestApp conn $ Routes.Auth.createUser user
+        result `shouldSatisfy` isLeft'
+
     it "claims anonymous onboarding during signup when onboarding_session_id is provided" $ do
       withCleanDb $ \conn -> do
         let sessionId = "signup-claim-session-1"
@@ -109,7 +136,7 @@ spec = describe "Routes.Auth" $ do
         _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress anonPayload
 
         let user = mkTestUser "signup-claim-user" "signup-claim@example.com" "password"
-        _ <- expectRight =<< runTestApp conn (Routes.Auth.createUserWithOnboarding (Just sessionId) user)
+        _ <- expectRight =<< runTestApp conn (Routes.Auth.createUserWithOnboarding (Just sessionId) (CreateUserRequest "signup-claim-user" "password" "signup-claim@example.com" Nothing))
 
         progress <- expectRight =<< runTestApp conn (OnboardingRoutes.getAnonymousOnboardingProgress sessionId)
         progress.claimed_by_user `shouldBe` Just "signup-claim-user"
@@ -235,6 +262,42 @@ spec = describe "Routes.Auth" $ do
         newUserData.username `shouldBe` "applefallback"
         newUserData.email `shouldBe` "applefallback@example.com"
         newUserData.verified `shouldBe` False
+
+    it "keeps linked user row decoding stable for social-auth logins" $ do
+      withCleanDb $ \conn -> do
+        let baseUser = mkTestUser "socialdecode" "socialdecode@example.com" "password"
+        let localUser =
+              User
+                baseUser.username
+                baseUser.password
+                baseUser.salt
+                True
+                baseUser.elo
+                42
+                baseUser.streak
+                baseUser.last_activity
+                baseUser.rank
+                baseUser.email
+                False
+        _ <- expectRight =<< runTestApp conn (Repo.User.insert localUser)
+        _ <- expectRight =<< runTestApp conn (UserIdentity.insertOrUpdate (Models.UserIdentity.UserIdentity "socialdecode" "google" "decode-sub-1" (Just "socialdecode@example.com") True))
+
+        let profile = SocialProfile "decode-sub-1" (Just "socialdecode@example.com") True
+        loggedIn <- expectRight =<< runTestApp conn (Routes.Auth.completeSocialAuth "google" profile Nothing Nothing)
+
+        loggedIn.username `shouldBe` "socialdecode"
+        loggedIn.xp `shouldBe` 42
+
+  describe "resolveInitialXp" $ do
+    it "defaults to 10 when initial ELO is missing" $
+      either (const (0 :: Integer)) id (resolveInitialXp Nothing) `shouldBe` 10
+
+    it "accepts initial ELO in allowed range" $
+      either (const (0 :: Integer)) id (resolveInitialXp (Just 50)) `shouldBe` 50
+
+    it "rejects non-positive and >50 initial ELO values" $ do
+      resolveInitialXp (Just 0) `shouldSatisfy` isLeft'
+      resolveInitialXp (Just 51) `shouldSatisfy` isLeft'
 
   describe "anonymous onboarding progress" $ do
     it "stores and reads anonymous onboarding progress by session id" $ do
