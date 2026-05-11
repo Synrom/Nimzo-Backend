@@ -39,7 +39,7 @@ type Server =
   :<|> (NewPassword -> AppM JsonableMsg)
 
 toPublic :: User -> PublicUser
-toPublic (User username password salt premium xp streak last_activity rank email verified) =
+toPublic (User username password salt premium elo xp streak last_activity rank email verified) =
   PublicUser username premium xp streak rank email verified
 
 getUserRoute :: String -> AppM User

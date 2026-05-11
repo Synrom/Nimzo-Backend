@@ -9,13 +9,15 @@ import Data.Aeson (FromJSON (..), ToJSON (..))
 import GHC.Generics
 import Data.Time (UTCTime)
 
-import Database.PostgreSQL.Simple (ToRow, FromRow, Connection, Query, query)
+import Database.PostgreSQL.Simple (ToRow)
+import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 
 data User = User
   { username :: String,
     password :: T.Text,
     salt :: T.Text,
     premium :: Bool,
+    elo :: Maybe Integer,
     xp :: Integer,
     streak :: Integer,
     last_activity :: UTCTime, 
@@ -66,8 +68,20 @@ instance FromJSON NewPassword
 instance ToJSON UserEmail
 instance FromJSON UserEmail
 instance ToJSON User
-instance FromJSON User
-instance FromRow User
+instance FromRow User where
+  fromRow =
+    User
+      <$> field
+      <*> field
+      <*> field
+      <*> field
+      <*> pure Nothing
+      <*> field
+      <*> field
+      <*> field
+      <*> field
+      <*> field
+      <*> field
 instance ToRow User
 instance ToJSON UserXP
 instance ToRow UserXP

@@ -12,6 +12,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 
 
@@ -33,7 +34,9 @@ import Data.ByteString.Lazy.UTF8 (toString)
 import Servant.Auth.Server 
 import Control.Monad.Reader
 import Control.Monad
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, fromMaybe)
+import GHC.Generics (Generic)
+import Data.Aeson (FromJSON)
 import App.Auth
 import App.SocialAuth
 import App.Async
@@ -65,7 +68,7 @@ type API =
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "google" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "apple" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
-    :<|> "user" :> QueryParam "onboarding_session_id" String :> ReqBody '[JSON] User :> Post '[JSON] NewUser
+    :<|> "user" :> QueryParam "onboarding_session_id" String :> ReqBody '[JSON] CreateUserRequest :> Post '[JSON] NewUser
     :<|> "user" :> ReqBody '[JSON] AuthTokenRequest :> Delete '[JSON] JsonableMsg
     :<|> "user" :> "reqChange" :> ReqBody '[JSON] UserEmail :> Post '[JSON] JsonableMsg
     :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokenRequest :> Post '[JSON] AuthTokens
@@ -76,7 +79,7 @@ type Server =
   (AuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
-  :<|> (Maybe String -> User -> AppM NewUser)
+  :<|> (Maybe String -> CreateUserRequest -> AppM NewUser)
   :<|> (AuthTokenRequest -> AppM JsonableMsg)
   :<|> (UserEmail -> AppM JsonableMsg)
   :<|> (AuthTokenRequest -> AppM AuthTokens)
@@ -101,30 +104,60 @@ invalidPassword = Unauthorized "Password cannot be empty."
 invalidOnboardingSession :: AppError
 invalidOnboardingSession = Unauthorized "Invalid onboarding session id."
 
-createUser :: User -> AppM NewUser
-createUser = createUserWithOnboarding Nothing
+invalidElo :: AppError
+invalidElo = Unauthorized "Invalid initial ELO. Must be > 0 and <= 50. Stored in users.xp."
 
-createUserWithOnboarding :: Maybe String -> User -> AppM NewUser
-createUserWithOnboarding maybeOnboardingSessionId user = do
-  let trimmedUsername = trim user.username
+-- Request payload for POST /user signup.
+-- initialElo, when provided, is persisted into users.xp.
+data CreateUserRequest = CreateUserRequest
+  { username :: String,
+    password :: String,
+    email :: String,
+    initialElo :: Maybe Integer
+  }
+  deriving (Eq, Show, Generic)
+
+instance FromJSON CreateUserRequest
+
+resolveInitialXp :: Maybe Integer -> Either AppError Integer
+resolveInitialXp maybeInitialElo = do
+  let initial = fromMaybe 10 maybeInitialElo
+  if initial > 0 && initial <= 50
+    then Right initial
+    else Left invalidElo
+
+createUser :: User -> AppM NewUser
+createUser user =
+  createUserWithOnboarding Nothing $
+    CreateUserRequest
+      { username = user.username,
+        password = T.unpack user.password,
+        email = user.email,
+        initialElo = user.elo
+      }
+
+createUserWithOnboarding :: Maybe String -> CreateUserRequest -> AppM NewUser
+createUserWithOnboarding maybeOnboardingSessionId request = do
+  let trimmedUsername = trim request.username
   ensure invalidUsername (not (null trimmedUsername))
-  ensure invalidPassword (not (T.null user.password))
-  let normalizedUser :: User
-      normalizedUser =
-        User
-          trimmedUsername
-          user.password
-          user.salt
-          user.premium
-          user.xp
-          user.streak
-          user.last_activity
-          user.rank
-          user.email
-          user.verified
+  let reqPassword = T.pack request.password
+  ensure invalidPassword (not (T.null reqPassword))
+  initialXp <- either throwError pure (resolveInitialXp request.initialElo)
   s <- liftIO generateSalt
-  let pwdhash = hashWithSalt s (Models.User.password normalizedUser)
-  dbuser <- Repo.User.insert $ normalizedUser {Models.User.password = pwdhash, salt = s}
+  let pwdhash = hashWithSalt s reqPassword
+  dbuser <- Repo.User.insert $
+    User
+      trimmedUsername
+      pwdhash
+      s
+      False
+      Nothing
+      initialXp
+      0
+      (read "1970-01-01 00:00:00 UTC")
+      0
+      request.email
+      False
   case fmap trim maybeOnboardingSessionId of
     Just sessionId -> do
       ensure invalidOnboardingSession (not (null sessionId))
@@ -134,7 +167,7 @@ createUserWithOnboarding maybeOnboardingSessionId user = do
   tokens <- createTokens dbuser
   forkAppM $ do
     verification_token <- createUserVerification dbuser
-    sendVerificationMail normalizedUser.username normalizedUser.email verification_token
+    sendVerificationMail dbuser.username dbuser.email verification_token
   return $ newUser tokens dbuser
 
 authCheck :: AuthRequest -> AppM NewUser
@@ -200,6 +233,7 @@ ensureVerifiedUser user
               user.password
               user.salt
               user.premium
+              user.elo
               user.xp
               user.streak
               user.last_activity
