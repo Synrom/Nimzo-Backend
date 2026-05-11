@@ -13,8 +13,9 @@ import Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import Network.Wai (defaultRequest)
 import Network.Wai.Internal (Request(..))
-import Network.Wai.Test (runSession, srequest, SRequest(..), simpleStatus)
-import Network.HTTP.Types.Status (status400)
+import Network.Wai.Test (runSession, srequest, SRequest(..), simpleStatus, simpleHeaders)
+import Network.HTTP.Types.Status (status302, status400)
+import Network.HTTP.Types.Header (hLocation)
 import Servant (serveWithContext, Context (EmptyContext))
 import Servant.Server (Context ((:.)))
 import Servant.Auth.Server (defaultCookieSettings, JWTSettings, CookieSettings)
@@ -312,6 +313,59 @@ spec = describe "Routes.Auth" $ do
       let hash2 = hashWithSalt salt password
 
       hash1 `shouldBe` hash2
+
+  describe "apple callback" $ do
+    let mkApp conn = do
+          env <- mkTestEnv conn
+          let ctx :: Context '[JWTSettings, CookieSettings]
+              ctx = jwtSettings env :. defaultCookieSettings :. EmptyContext
+          pure (serveWithContext api ctx (mkServer env))
+
+    let mkCallbackReq body =
+          SRequest
+            defaultRequest
+              { requestMethod = "POST"
+              , rawPathInfo = "/apple/callback"
+              , pathInfo = ["apple", "callback"]
+              , requestHeaders = [("Content-Type", "application/x-www-form-urlencoded")]
+              }
+            (LBS8.pack body)
+
+    it "redirects to chessanki:// deep link when state=mobile" $ do
+      withCleanDb $ \conn -> do
+        app <- mkApp conn
+        response <- runSession (srequest $ mkCallbackReq "id_token=eyJ.test.tok&state=mobile") app
+        simpleStatus response `shouldBe` status302
+        lookup hLocation (simpleHeaders response) `shouldBe` Just "chessanki://auth/apple?id_token=eyJ.test.tok"
+
+    it "redirects to web URL when state is not mobile" $ do
+      withCleanDb $ \conn -> do
+        app <- mkApp conn
+        response <- runSession (srequest $ mkCallbackReq "id_token=eyJ.test.tok&state=web") app
+        simpleStatus response `shouldBe` status302
+        lookup hLocation (simpleHeaders response) `shouldBe` Just "https://nimzochess.com/?apple_token=eyJ.test.tok"
+
+    it "redirects to web URL when state is absent" $ do
+      withCleanDb $ \conn -> do
+        app <- mkApp conn
+        response <- runSession (srequest $ mkCallbackReq "id_token=eyJ.test.tok") app
+        simpleStatus response `shouldBe` status302
+        lookup hLocation (simpleHeaders response) `shouldBe` Just "https://nimzochess.com/?apple_token=eyJ.test.tok"
+
+    it "falls back to web base URL when id_token is missing" $ do
+      withCleanDb $ \conn -> do
+        app <- mkApp conn
+        response <- runSession (srequest $ mkCallbackReq "state=mobile") app
+        simpleStatus response `shouldBe` status302
+        lookup hLocation (simpleHeaders response) `shouldBe` Just "https://nimzochess.com/"
+
+    it "correctly extracts id_token when Apple includes extra fields (code, user)" $ do
+      withCleanDb $ \conn -> do
+        app <- mkApp conn
+        let body = "code=abc123&id_token=eyJ.test.tok&state=mobile&user=%7B%22name%22%3A%22John%22%7D"
+        response <- runSession (srequest $ mkCallbackReq body) app
+        simpleStatus response `shouldBe` status302
+        lookup hLocation (simpleHeaders response) `shouldBe` Just "chessanki://auth/apple?id_token=eyJ.test.tok"
 
   describe "verify user" $ do
     it "checks that verifying a user works" $ do

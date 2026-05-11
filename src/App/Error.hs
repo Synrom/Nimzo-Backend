@@ -6,10 +6,10 @@
 module App.Error where
 
 import qualified Data.Text as T
-import Servant (ServerError(..), err401, err404, err409, err500, (:<|>) (..))
+import Servant (ServerError(..), err302, err401, err404, err409, err500, (:<|>) (..))
 import Database.PostgreSQL.Simple (SqlError(..))
 import Database.PostgreSQL.Simple.Errors (ConstraintViolation (..), constraintViolation)
-import Network.HTTP.Types.Header (Header)
+import Network.HTTP.Types.Header (Header, hLocation)
 import Data.Aeson (encode, object, (.=), ToJSON)
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Char8 (pack)
@@ -18,7 +18,7 @@ import Data.CaseInsensitive  (mk)
 import Control.Monad.Except
 import GHC.Generics
 
-data AppError = NotFound String | Unauthorized String | Internal String | AlreadyExists String | MergeConflict String
+data AppError = NotFound String | Unauthorized String | Internal String | AlreadyExists String | MergeConflict String | Redirect String
   deriving (Generic, Show)
 
 class ThrowAppError a where
@@ -52,6 +52,7 @@ toServerError = \case
   Internal m -> jsonize err500 m
   AlreadyExists m -> jsonize err409 m
   MergeConflict m -> jsonize err409 m
+  Redirect url -> err302 { errHeaders = [(hLocation, pack url)] }
 
 logAppError :: AppError -> IO ()
 logAppError appErr = putStrLn $ "[AppError] " ++ show appErr

@@ -20,7 +20,12 @@ module Routes.Auth where
 import qualified Data.Text as T
 import Data.Char (isAlphaNum)
 import Data.List (dropWhileEnd)
-import Servant (throwError, type (:<|>) (..), type (:>), JSON, ReqBody, Post, Delete, QueryParam)
+import Servant (throwError, type (:<|>) (..), type (:>), JSON, ReqBody, Post, Delete, QueryParam, NoContent(..))
+import Servant.API.ContentTypes (Accept(..), MimeUnrender(..))
+import Network.HTTP.Media ((//))
+import Network.HTTP.Types (parseSimpleQuery)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import qualified Data.ByteString.Char8 as BS8
 import Control.Monad.Except
@@ -47,7 +52,16 @@ import App.Error (AppError(..))
 import App.Env (socialAuthConfig)
 import Models.Watermelon (Success (Success), JsonableMsg (..))
 
-type API = 
+-- Content type for Apple's form-encoded callback POST
+data AppleFormData
+
+instance Accept AppleFormData where
+  contentType _ = "application" // "x-www-form-urlencoded"
+
+instance MimeUnrender AppleFormData BS.ByteString where
+  mimeUnrender _ = Right . BL.toStrict
+
+type API =
     "auth" :> ReqBody '[JSON] AuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "google" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
     :<|> "auth" :> "apple" :> ReqBody '[JSON] SocialAuthRequest :> Post '[JSON] NewUser
@@ -56,8 +70,9 @@ type API =
     :<|> "user" :> "reqChange" :> ReqBody '[JSON] UserEmail :> Post '[JSON] JsonableMsg
     :<|> "auth" :> "refresh" :> ReqBody '[JSON] AuthTokenRequest :> Post '[JSON] AuthTokens
     :<|> "verify" :> ReqBody '[JSON] Token :> Post '[JSON] JsonableMsg
+    :<|> "apple" :> "callback" :> ReqBody '[AppleFormData] BS.ByteString :> Post '[JSON] NoContent
 
-type Server = 
+type Server =
   (AuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
   :<|> (SocialAuthRequest -> AppM NewUser)
@@ -66,6 +81,7 @@ type Server =
   :<|> (UserEmail -> AppM JsonableMsg)
   :<|> (AuthTokenRequest -> AppM AuthTokens)
   :<|> (Token -> AppM JsonableMsg)
+  :<|> (BS.ByteString -> AppM NoContent)
 
 unauthorized :: AppError
 unauthorized = Unauthorized "Username/Email or password is wrong."
@@ -283,13 +299,36 @@ requestChangePwd umail = do
     sendChangePasswordMail userid.username umail.email access_token
   return $ Msg "Successfully send change password email."
 
+-- Deep link for the Android/Chrome Custom Tab flow.
+-- State: app opens Apple OAuth with state=mobile → Apple POSTs here →
+-- backend redirects to the deep link → app intercepts and calls POST /auth/apple.
+mobileDeepLinkBase :: String
+mobileDeepLinkBase = "chessanki://auth/apple"
+
+webCallbackBase :: String
+webCallbackBase = "https://nimzochess.com/"
+
+appleCallbackHandler :: BS.ByteString -> AppM NoContent
+appleCallbackHandler body = do
+  let pairs = parseSimpleQuery body
+      lookupField k = BS8.unpack <$> lookup k pairs
+      mIdToken = lookupField "id_token"
+      mState = lookupField "state"
+      isMobile = mState == Just "mobile"
+      location = case (isMobile, mIdToken) of
+        (True, Just tok) -> mobileDeepLinkBase <> "?id_token=" <> tok
+        (_, Just tok)    -> webCallbackBase <> "?apple_token=" <> tok
+        _                -> webCallbackBase
+  throwError $ Redirect location
+
 server :: Server
-server = 
+server =
   authCheck
   :<|> googleAuth
   :<|> appleAuth
   :<|> createUserWithOnboarding
-  :<|> deleteUser 
+  :<|> deleteUser
   :<|> requestChangePwd
-  :<|> refreshToken 
+  :<|> refreshToken
   :<|> verifyUser
+  :<|> appleCallbackHandler

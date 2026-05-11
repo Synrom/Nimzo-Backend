@@ -28,7 +28,9 @@ nt env (AppM m) = do
   r <- runExceptT (runReaderT m env)
   either
     (\appErr -> do
-      liftIO $ logAppError appErr
+      case appErr of
+        Redirect _ -> pure ()
+        _ -> liftIO $ logAppError appErr
       throwError $ toServerError appErr)
     pure
     r
