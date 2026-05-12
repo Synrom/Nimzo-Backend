@@ -11,7 +11,7 @@ sessionIdMaxLength :: Int
 sessionIdMaxLength = 128
 
 lastStepMaxLength :: Int
-lastStepMaxLength = 100
+lastStepMaxLength = 500
 
 onboardingShortFieldMaxLength :: Int
 onboardingShortFieldMaxLength = 50

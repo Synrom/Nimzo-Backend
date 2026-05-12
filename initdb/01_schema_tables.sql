@@ -41,7 +41,7 @@ CREATE TABLE user_onboarding_preferences (
 
 CREATE TABLE anonymous_onboarding_progress (
   onboarding_session_id VARCHAR(128) PRIMARY KEY,
-  last_step VARCHAR(100) NOT NULL,
+  last_step VARCHAR(500) NOT NULL,
   stopped BOOLEAN NOT NULL DEFAULT FALSE,
   chess_level VARCHAR(50),
   elo VARCHAR(50),
