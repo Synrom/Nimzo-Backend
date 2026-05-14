@@ -64,7 +64,7 @@ CREATE TABLE user_deck_views (
   new_cards_today INTEGER NOT NULL DEFAULT 0,
   last_study_date VARCHAR(10) NOT NULL DEFAULT '',
   is_author BOOLEAN DEFAULT FALSE,
-  cards_per_day INTEGER NOT NULL DEFAULT 20,
+  cards_per_day INTEGER NOT NULL DEFAULT 5,
   num_cards_learnt INTEGER NOT NULL DEFAULT 0,
   name VARCHAR(250) NOT NULL,
   is_public BOOLEAN NOT NULL,
