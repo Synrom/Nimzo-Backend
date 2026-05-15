@@ -43,7 +43,7 @@ searchReturnFields =
   \, d.author, d.user_deck_id \
   \, d.image_url \
   \, d.featured_source \
-  \, d.featured_card_id \
+  \, fc.moves \
   \, d.featured_rank \
   \, d.video_url \
   \, d.rating_avg \
@@ -95,6 +95,7 @@ searchInstant (Just s)
       \) \
       \SELECT" <> searchReturnFields <>
       "FROM decks d \
+      \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id \
       \CROSS JOIN q \
       \WHERE d.is_public = TRUE \
       \AND q.tsq IS NOT NULL \
@@ -118,6 +119,7 @@ search (Just s)
       \) \
       \SELECT" <> searchReturnFields <>
       "FROM decks d \
+      \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id \
       \CROSS JOIN q \
       \WHERE d.is_public = TRUE \
       \AND q.tsq IS NOT NULL \
