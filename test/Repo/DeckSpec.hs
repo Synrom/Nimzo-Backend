@@ -230,6 +230,8 @@ spec = describe "Repo.Deck" $ do
             ("meta_card_2" :: String, "metaauthor" :: String, "udv_meta" :: String, "e4 c5 Nc3 e6" :: String, "Meta Card 2" :: String, "w" :: String, 0 :: Integer)
           _ <- execute "INSERT INTO deck_ratings (deck_id, user_id, rating) VALUES (?, ?, ?)"
             (Models.Deck.deckId insertedDeck, "metarater" :: String, 5 :: Int)
+          _ <- execute "UPDATE decks SET featured_source = ?, featured_card_id = ? WHERE id = ?"
+            (Just ("tiktok" :: String), Just ("meta_card_2" :: String), Models.Deck.deckId insertedDeck)
           return ()
 
         result <- runTestApp conn $ Repo.Deck.search (Just "Metadata")
@@ -241,6 +243,7 @@ spec = describe "Repo.Deck" $ do
         deck.numCardsTotal `shouldBe` 2
         deck.previewMoves `shouldBe` "e4 c5"
         deck.repertoire `shouldBe` "White repertoire"
+        deck.featuredCardMoves `shouldBe` Just "e4 c5 Nc3 e6"
         deck.rating `shouldBe` Just 5.0
         deck.ratingCount `shouldBe` 1
         deck.downloadCount `shouldBe` 2
@@ -537,7 +540,7 @@ spec = describe "Repo.Deck" $ do
 
         featured <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 2))
         map (.name) featured `shouldBe` ["Featured C", "Featured B"]
-        map (.featuredCardId) featured `shouldBe` [Nothing, Just "featured_card_b"]
+        map (.featuredCardMoves) featured `shouldBe` [Nothing, Just "e4 e5"]
 
   describe "find" $ do
     it "finds deck by ID" $ do
@@ -621,8 +624,8 @@ spec = describe "Repo.Deck" $ do
         featuredDecks <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 10))
         let selected = filter (\d -> d.deckId == Models.Deck.deckId deck) featuredDecks
         length selected `shouldBe` 1
-        let featuredCard = (head selected).featuredCardId
-        featuredCard `shouldBe` Just "fcons_card_2"
+        let featuredCardMoves = (head selected).featuredCardMoves
+        featuredCardMoves `shouldBe` Just "d4 d5"
 
         _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck (CardQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
         pure ()

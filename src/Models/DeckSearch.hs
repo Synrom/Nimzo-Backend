@@ -39,7 +39,7 @@ data DeckSearchResult = DeckSearchResult
     user_deck_id :: String,
     imageUrl :: Maybe String,
     featuredSource :: Maybe String,
-    featuredCardId :: Maybe String,
+    featuredCardMoves :: Maybe String,
     featuredRank :: Maybe Integer,
     videoUrl :: Maybe String,
     rating :: Maybe Double,
