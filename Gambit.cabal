@@ -20,6 +20,7 @@ library
   hs-source-dirs: src
   exposed-modules:
       Models.User,
+      Models.AndroidEmail,
       Models.UserIdentity,
       Models.Onboarding,
       Models.SocialAuth,
@@ -48,6 +49,7 @@ library
       App.Config,
       Repo.Classes,
       Repo.Deck,
+      Repo.AndroidEmail,
       Repo.Deck.Query,
       Repo.Deck.Media,
       Repo.Deck.Promotion,
@@ -62,6 +64,7 @@ library
       Repo.UserDeckView,
       Routes.Deck,
       Routes.User,
+      Routes.Android,
       Routes.Onboarding,
       Routes.Watermelon,
       Routes.Auth,
@@ -150,6 +153,7 @@ test-suite Tests
       Repo.UserSpec,
       Repo.DeckSpec,
       Repo.OnboardingSpec,
+      Routes.AndroidSpec,
       Routes.AuthSpec,
       Routes.UserSpec,
       Routes.WatermelonSpec

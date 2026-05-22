@@ -197,3 +197,32 @@ sendChangePasswordMail user_name email access_token = do
             \ </html>"
       veritication_mail = simpleMail from_address to_address cc bcc subject [body]
     sendMail veritication_mail
+
+sendAndroidEmailNotification :: MonadMail m => String -> m ()
+sendAndroidEmailNotification addedEmail = do
+  auth <- mailCfg
+  unless auth.test $ do
+    let
+      from_address = Address (Just auth.name) auth.mail
+      to_address = [Address Nothing "s6maleiw@uni-bonn.de"]
+      cc = []
+      bcc = []
+      subject = "New Android Email Added"
+      body =
+        htmlPart $
+          TL.pack $
+            "<!DOCTYPE html> \
+            \ <html lang=\"en\"> \
+            \ <head> \
+            \ <meta charset=\"UTF-8\"> \
+            \ <title>Android Email Notification</title> \
+            \ </head> \
+            \ <body> \
+            \   <p>A new email was added to android_emails.</p> \
+            \   <p><strong>Email:</strong> "
+              ++ addedEmail
+              ++ "</p> \
+            \ </body> \
+            \ </html>"
+      notificationMail = simpleMail from_address to_address cc bcc subject [body]
+    sendMail notificationMail
