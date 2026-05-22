@@ -8,6 +8,7 @@ import Test.Hspec
 import qualified Repo.UserSpec
 import qualified Repo.DeckSpec
 import qualified Repo.OnboardingSpec
+import qualified Routes.AndroidSpec
 import qualified Routes.AuthSpec
 import qualified Routes.UserSpec
 import qualified Routes.WatermelonSpec
@@ -23,6 +24,7 @@ spec = do
     describe "Onboarding Repository" Repo.OnboardingSpec.spec
 
   describe "Route Tests" $ do
+    describe "Android Routes" Routes.AndroidSpec.spec
     describe "Auth Routes" Routes.AuthSpec.spec
     describe "User Routes" Routes.UserSpec.spec
     describe "Watermelon Sync Routes" Routes.WatermelonSpec.spec

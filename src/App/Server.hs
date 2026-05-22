@@ -21,6 +21,7 @@ import App.AppM
 import App.Env
 import qualified Routes.Deck as DeckRoutes
 import qualified Routes.Auth as AuthRoutes
+import qualified Routes.Android as AndroidRoutes
 import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
 import qualified Routes.Onboarding as Onboarding
@@ -34,7 +35,7 @@ secureServerT auth =
   :<|> DeckRoutes.secureServer auth
 
 serverT :: ServerT API AppM
-serverT = secureServerT :<|> Onboarding.publicServer :<|> AuthRoutes.server :<|> DeckRoutes.server 
+serverT = secureServerT :<|> Onboarding.publicServer :<|> AndroidRoutes.server :<|> AuthRoutes.server :<|> DeckRoutes.server
 
 mkServer :: Env -> Servant.Server API
 mkServer env = hoistServerWithContext api (Proxy :: Proxy '[JWTSettings, CookieSettings]) (nt env) serverT

@@ -57,6 +57,7 @@ import Models.UserCardView (UserCardView(..))
 import App.Auth (AuthenticatedUser(..), AuthRequest(..), AuthTokens(..), NewUser(..))
 import qualified Routes.Deck as DeckRoutes
 import qualified Routes.Auth as AuthRoutes
+import qualified Routes.Android as AndroidRoutes
 import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
 import qualified Routes.Onboarding as Onboarding
@@ -70,6 +71,7 @@ type SecureAPI =
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI
     :<|> Onboarding.PublicAPI
+    :<|> AndroidRoutes.API
     :<|> AuthRoutes.API
     :<|> DeckRoutes.API 
 
