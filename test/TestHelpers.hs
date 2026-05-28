@@ -55,6 +55,8 @@ withTestDb = bracket mkTestConn close
 cleanTestDb :: Connection -> IO ()
 cleanTestDb conn = do
   _ <- execute_ conn "DELETE FROM android_emails"
+  _ <- execute_ conn "DELETE FROM experiment_events"
+  _ <- execute_ conn "DELETE FROM experiment_assignments"
   _ <- execute_ conn "DELETE FROM anonymous_onboarding_progress"
   _ <- execute_ conn "DELETE FROM user_onboarding_preferences"
   _ <- execute_ conn "DELETE FROM decks"
@@ -78,7 +80,7 @@ ensureTestSchema conn = do
   _ <- execute_ conn
     "CREATE TABLE IF NOT EXISTS anonymous_onboarding_progress (\
     \ onboarding_session_id VARCHAR(128) PRIMARY KEY,\
-    \ last_step VARCHAR(100) NOT NULL,\
+    \ last_step VARCHAR(500) NOT NULL,\
     \ stopped BOOLEAN NOT NULL DEFAULT FALSE,\
     \ chess_level VARCHAR(50),\
     \ elo VARCHAR(50),\
@@ -106,6 +108,8 @@ ensureTestSchema conn = do
     \)"
   _ <- execute_ conn "ALTER TABLE user_onboarding_preferences ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50) NOT NULL DEFAULT 'Other'"
   _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50)"
+  _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ALTER COLUMN last_step TYPE VARCHAR(500)"
+  applySqlFile conn "initdb/16_experiments.sql"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS new_cards_today INTEGER NOT NULL DEFAULT 0"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS last_study_date VARCHAR(10) NOT NULL DEFAULT ''"

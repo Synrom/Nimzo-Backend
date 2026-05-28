@@ -61,6 +61,7 @@ import qualified Routes.Android as AndroidRoutes
 import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
 import qualified Routes.Onboarding as Onboarding
+import qualified Routes.Experiment as Experiment
 
 type SecureAPI =
   Watermelon.API
@@ -71,6 +72,7 @@ type SecureAPI =
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI
     :<|> Onboarding.PublicAPI
+    :<|> Experiment.API
     :<|> AndroidRoutes.API
     :<|> AuthRoutes.API
     :<|> DeckRoutes.API 
