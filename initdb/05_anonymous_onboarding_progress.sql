@@ -7,10 +7,14 @@ CREATE TABLE IF NOT EXISTS anonymous_onboarding_progress (
   organization VARCHAR(50),
   motivation VARCHAR(250),
   study_goal VARCHAR(50),
+  heard_about_us VARCHAR(50),
   claimed_by_user VARCHAR(250) UNIQUE REFERENCES users(username) ON DELETE SET NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE anonymous_onboarding_progress
+  ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50);
 
 CREATE INDEX IF NOT EXISTS anonymous_onboarding_progress_last_step_idx
   ON anonymous_onboarding_progress(last_step);

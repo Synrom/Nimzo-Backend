@@ -5,6 +5,10 @@ CREATE TABLE IF NOT EXISTS user_onboarding_preferences (
   organization VARCHAR(50) NOT NULL,
   motivation VARCHAR(250) NOT NULL,
   study_goal VARCHAR(50) NOT NULL,
+  heard_about_us VARCHAR(50) NOT NULL DEFAULT 'Other',
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE user_onboarding_preferences
+  ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50) NOT NULL DEFAULT 'Other';
