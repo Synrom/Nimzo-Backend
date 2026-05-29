@@ -8,7 +8,6 @@ import Data.Aeson (FromJSON (..), ToJSON (..), Options(..), defaultOptions, gene
 import GHC.Generics
 import Database.PostgreSQL.Simple (FromRow)
 import Database.PostgreSQL.Simple.FromRow (field, fromRow)
-import Models.Deck (Deck)
 
 data SearchContinuation = SearchContinuation
   { move :: String,
@@ -17,7 +16,7 @@ data SearchContinuation = SearchContinuation
   deriving (Eq, Show, Generic)
 
 data SearchDeck = SearchDeck
-  { deck :: Deck,
+  { deck :: DeckSearchResult,
     deck_nr_cards :: Integer
   }
   deriving (Eq, Show, Generic)

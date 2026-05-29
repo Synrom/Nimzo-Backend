@@ -800,6 +800,40 @@ spec = describe "Repo.Deck" $ do
         map (.deck_nr_cards) (decks response) `shouldBe` [2, 2]
         map (.deck.isPublic) (decks response) `shouldBe` [True, True]
 
+    it "returns DeckSearchResult data for matching decks" $ do
+      withCleanDb $ \conn -> do
+        let author = mkTestUser "searchcontmeta" "searchcontmeta@example.com" "password"
+        let rater = mkTestUser "searchcontmetarater" "searchcontmetarater@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert author
+        _ <- runTestApp conn $ Repo.User.insert rater
+
+        insertedDeck <- insertDeckWithCards conn "searchcontmeta" "udv_cont_meta" "Continuation Metadata" True
+          [ "e4 c5 Nf3"
+          , "e4 c5 Nc3"
+          ]
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO deck_ratings (deck_id, user_id, rating) VALUES (?, ?, ?)"
+            (Models.Deck.deckId insertedDeck, "searchcontmetarater" :: String, 4 :: Int)
+          _ <- execute "UPDATE decks SET featured_source = ?, featured_card_id = ? WHERE id = ?"
+            (Just ("curated" :: String), Just ("udv_cont_meta_card_2" :: String), Models.Deck.deckId insertedDeck)
+          return ()
+
+        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing Nothing Nothing
+        response <- expectRight result
+
+        length (decks response) `shouldBe` 1
+        let resultDeck = (head (decks response)).deck
+        resultDeck.name `shouldBe` "Continuation Metadata"
+        resultDeck.previewMoves `shouldBe` "e4 c5"
+        resultDeck.repertoire `shouldBe` "Both sides"
+        resultDeck.featuredSource `shouldBe` Just "curated"
+        resultDeck.featuredCardMoves `shouldBe` Just "e4 c5 Nc3"
+        resultDeck.rating `shouldBe` Just 4.0
+        resultDeck.ratingCount `shouldBe` 1
+        resultDeck.downloadCount `shouldBe` 1
+        (head (decks response)).deck_nr_cards `shouldBe` 2
+
     it "counts exact matches and prefix matches, but only yields continuations after the prefix" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "exactprefix" "exactprefix@example.com" "password"
