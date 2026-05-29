@@ -21,14 +21,17 @@ spec = describe "Routes.Experiment" $ do
                 "experiment-session-1"
                 (Just "1.0")
                 (Just "ios")
-                [SupportedExperiment "onboarding_after_notifications_v1" ["library", "explore_openings"]]
+                [ SupportedExperiment "onboarding_after_notifications_v1" ["library", "explore_openings"],
+                  SupportedExperiment "onboarding_first_deck_segment_v1" ["show_first_deck", "skip_to_trial"]
+                ]
 
         ExperimentBootstrapResponse assignments <- expectRight =<< runTestApp conn (ExperimentRoutes.bootstrapExperiments payload)
 
-        length assignments `shouldBe` 1
-        let ExperimentAssignment experimentKey variantKey = head assignments
-        experimentKey `shouldBe` "onboarding_after_notifications_v1"
-        variantKey `shouldSatisfy` (`elem` ["library", "explore_openings"])
+        length assignments `shouldBe` 2
+        map (\(ExperimentAssignment experimentKey _) -> experimentKey) assignments
+          `shouldBe` ["onboarding_after_notifications_v1", "onboarding_first_deck_segment_v1"]
+        map (\(ExperimentAssignment _ variantKey) -> variantKey) assignments
+          `shouldSatisfy` all (`elem` ["library", "explore_openings", "show_first_deck", "skip_to_trial"])
 
     it "keeps repeated bootstrap calls sticky for the same session" $ do
       withCleanDb $ \conn -> do

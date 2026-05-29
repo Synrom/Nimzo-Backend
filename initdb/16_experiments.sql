@@ -51,8 +51,18 @@ INSERT INTO experiments (experiment_key, status, default_variant, respect_existi
 VALUES ('onboarding_after_notifications_v1', 'active', 'library', TRUE)
 ON CONFLICT (experiment_key) DO NOTHING;
 
+INSERT INTO experiments (experiment_key, status, default_variant, respect_existing_assignments)
+VALUES ('onboarding_first_deck_segment_v1', 'active', 'show_first_deck', TRUE)
+ON CONFLICT (experiment_key) DO NOTHING;
+
 INSERT INTO experiment_variants (experiment_key, variant_key, weight)
 VALUES
   ('onboarding_after_notifications_v1', 'library', 50),
   ('onboarding_after_notifications_v1', 'explore_openings', 50)
+ON CONFLICT (experiment_key, variant_key) DO NOTHING;
+
+INSERT INTO experiment_variants (experiment_key, variant_key, weight)
+VALUES
+  ('onboarding_first_deck_segment_v1', 'show_first_deck', 50),
+  ('onboarding_first_deck_segment_v1', 'skip_to_trial', 50)
 ON CONFLICT (experiment_key, variant_key) DO NOTHING;
