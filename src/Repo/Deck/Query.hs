@@ -33,9 +33,6 @@ import Models.Watermelon (JsonableMsg (Msg))
 returnFields :: Query
 returnFields = " id, name, is_public, description, color, num_cards_total, author, user_deck_id, image_url, featured_source, featured_card_id, featured_rank, video_url "
 
-qualifiedReturnFields :: Query
-qualifiedReturnFields = " d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_card_id, d.featured_rank, d.video_url "
-
 searchReturnFields :: Query
 searchReturnFields =
   " d.id, d.name, d.is_public, d.description, d.color \
@@ -218,15 +215,17 @@ buildColorFilter (Just color) = (" AND d.color = ?", [toField color])
 
 buildDecksQuery :: String -> Maybe String -> Maybe Integer -> (Query, [Action])
 buildDecksQuery prefix mColor mLimit =
-  ( baseSql <> colorSql <> prefixSql <> orderSql <> limitSql,
+  ( baseSql <> colorSql <> prefixSql <> groupSql <> outerSql <> orderSql <> limitSql,
     colorParams <> prefixParams <> limitParams
   )
   where
     baseSql =
-      "SELECT" <> qualifiedReturnFields <> ", COUNT(*) AS nr_cards " <>
-      "FROM user_card_views ucv \
-      \JOIN decks d ON d.user_deck_id = ucv.user_deck_id \
-      \WHERE d.is_public = TRUE"
+      "SELECT" <> searchReturnFields <> ", deck_counts.nr_cards " <>
+      "FROM ( \
+      \  SELECT d.id AS deck_id, COUNT(*) AS nr_cards \
+      \  FROM user_card_views ucv \
+      \  JOIN decks d ON d.user_deck_id = ucv.user_deck_id \
+      \  WHERE d.is_public = TRUE"
     (colorSql, colorParams) = buildColorFilter mColor
     (prefixSql, prefixParams)
       | null prefix = ("", [])
@@ -234,9 +233,13 @@ buildDecksQuery prefix mColor mLimit =
           ( " AND (ucv.moves = ? OR ucv.moves LIKE ? || ' %')",
             [toField prefix, toField prefix]
           )
+    groupSql = " GROUP BY d.id"
+    outerSql =
+      ") deck_counts \
+      \JOIN decks d ON d.id = deck_counts.deck_id \
+      \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id"
     orderSql =
-      " GROUP BY d.id, d.name, d.is_public, d.description, d.color, d.num_cards_total, d.author, d.user_deck_id, d.image_url, d.featured_source, d.featured_card_id, d.featured_rank, d.video_url \
-      \ORDER BY COUNT(*) DESC, d.name"
+      " ORDER BY deck_counts.nr_cards DESC, d.name"
     limitParams = maybe [] (\limit' -> [toField limit']) (normalizeLimit mLimit)
     limitSql
       | null limitParams = ""
