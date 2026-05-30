@@ -53,7 +53,8 @@ data AnonymousOnboardingProgressPayload = AnonymousOnboardingProgressPayload
     elo :: Maybe String,
     organization :: Maybe String,
     motivation :: Maybe String,
-    study_goal :: Maybe String
+    study_goal :: Maybe String,
+    platform :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
@@ -69,6 +70,7 @@ data AnonymousOnboardingProgress = AnonymousOnboardingProgress
     organization :: Maybe String,
     motivation :: Maybe String,
     study_goal :: Maybe String,
+    platform :: Maybe String,
     claimed_by_user :: Maybe String
   }
   deriving (Eq, Show, Generic)

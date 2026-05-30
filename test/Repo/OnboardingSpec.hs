@@ -34,7 +34,7 @@ spec = describe "Repo.Onboarding" $ do
         let user = mkTestUser "idempotent-claim-user" "idempotent-claim@example.com" "password"
         _ <- runTestApp conn $ AuthRoutes.createUser user
 
-        let payload = AnonymousOnboardingProgressPayload "idempotent-session" "elo" True (Just "beginner") (Just "0-800") Nothing Nothing Nothing
+        let payload = AnonymousOnboardingProgressPayload "idempotent-session" "elo" True (Just "beginner") (Just "0-800") Nothing Nothing Nothing Nothing
         _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
 
         firstClaim <- runTestApp conn $ OnboardingRepo.claimAnonymousForUser "idempotent-claim-user" "idempotent-session"
@@ -50,7 +50,7 @@ spec = describe "Repo.Onboarding" $ do
         _ <- runTestApp conn $ AuthRoutes.createUser userA
         _ <- runTestApp conn $ AuthRoutes.createUser userB
 
-        let payload = AnonymousOnboardingProgressPayload "conflict-session" "study_goal" True (Just "advanced") (Just "2000+") Nothing Nothing (Just "20+ mins")
+        let payload = AnonymousOnboardingProgressPayload "conflict-session" "study_goal" True (Just "advanced") (Just "2000+") Nothing Nothing (Just "20+ mins") Nothing
         _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
 
         _ <- runTestApp conn $ OnboardingRepo.claimAnonymousForUser "claim-owner-user" "conflict-session"

@@ -48,6 +48,7 @@ CREATE TABLE anonymous_onboarding_progress (
   organization VARCHAR(50),
   motivation VARCHAR(250),
   study_goal VARCHAR(50),
+  platform VARCHAR(50),
   heard_about_us VARCHAR(50),
   claimed_by_user VARCHAR(250) UNIQUE REFERENCES users(username) ON DELETE SET NULL,
   last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

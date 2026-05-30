@@ -63,7 +63,7 @@ spec = describe "Routes.Onboarding (secure)" $ do
         _ <- runTestApp conn $ AuthRoutes.createUser user
 
         let sessionId = "anon-session-claim-1"
-        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a study habit") (Just "0-5 mins")
+        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a study habit") (Just "0-5 mins") Nothing
         _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress anonPayload
 
         let claimPayload = ClaimAnonymousOnboardingPayload sessionId

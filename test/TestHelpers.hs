@@ -87,6 +87,7 @@ ensureTestSchema conn = do
     \ organization VARCHAR(50),\
     \ motivation VARCHAR(250),\
     \ study_goal VARCHAR(50),\
+    \ platform VARCHAR(50),\
     \ heard_about_us VARCHAR(50),\
     \ claimed_by_user VARCHAR(250) UNIQUE REFERENCES users(username) ON DELETE SET NULL,\
     \ last_modified TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,\
@@ -108,6 +109,7 @@ ensureTestSchema conn = do
     \)"
   _ <- execute_ conn "ALTER TABLE user_onboarding_preferences ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50) NOT NULL DEFAULT 'Other'"
   _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50)"
+  _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ADD COLUMN IF NOT EXISTS platform VARCHAR(50)"
   _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ALTER COLUMN last_step TYPE VARCHAR(500)"
   applySqlFile conn "initdb/16_experiments.sql"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
