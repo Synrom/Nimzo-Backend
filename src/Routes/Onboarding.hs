@@ -59,6 +59,9 @@ invalidOnboardingStep = Unauthorized "Invalid onboarding step."
 invalidOnboardingPayload :: AppError
 invalidOnboardingPayload = Unauthorized "Invalid onboarding payload."
 
+invalidOnboardingPlatform :: AppError
+invalidOnboardingPlatform = Unauthorized "Invalid onboarding platform."
+
 trim :: String -> String
 trim = dropWhileEnd (== ' ') . dropWhile (== ' ')
 
@@ -67,6 +70,10 @@ ensureLength maxLen value err = ensure err (length value <= maxLen)
 
 ensureOptionalLength :: Int -> Maybe String -> AppError -> AppM ()
 ensureOptionalLength maxLen maybeValue err = maybe (pure ()) (\value -> ensureLength maxLen value err) maybeValue
+
+ensureOptionalPlatform :: Maybe String -> AppM ()
+ensureOptionalPlatform maybePlatform =
+  maybe (pure ()) (\platform -> ensure invalidOnboardingPlatform (platform `elem` ["android", "ios"])) maybePlatform
 
 validateAnonymousPayload :: AnonymousOnboardingProgressPayload -> AppM AnonymousOnboardingProgressPayload
 validateAnonymousPayload payload = do
@@ -80,6 +87,7 @@ validateAnonymousPayload payload = do
           payload.organization
           payload.motivation
           payload.study_goal
+          payload.platform
 
   ensure invalidOnboardingSession (not (null normalizedPayload.onboarding_session_id))
   ensure invalidOnboardingStep (not (null normalizedPayload.last_step))
@@ -90,6 +98,7 @@ validateAnonymousPayload payload = do
   ensureOptionalLength onboardingShortFieldMaxLength normalizedPayload.organization invalidOnboardingPayload
   ensureOptionalLength motivationMaxLength normalizedPayload.motivation invalidOnboardingPayload
   ensureOptionalLength onboardingShortFieldMaxLength normalizedPayload.study_goal invalidOnboardingPayload
+  ensureOptionalPlatform normalizedPayload.platform
   pure normalizedPayload
 
 validateUserOnboardingPayload :: OnboardingPreferencesPayload -> AppM OnboardingPreferencesPayload

@@ -48,7 +48,7 @@ findByUser username = listToMaybe <$> runQuery query (Only username)
 
 anonymousReturnFields :: Query
 anonymousReturnFields =
-  " onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal, claimed_by_user "
+  " onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal, platform, claimed_by_user "
 
 upsertAnonymousProgress :: MonadDB m => AnonymousOnboardingProgressPayload -> m ()
 upsertAnonymousProgress payload = do
@@ -60,15 +60,16 @@ upsertAnonymousProgress payload = do
       payload.elo,
       payload.organization,
       payload.motivation,
-      payload.study_goal
+      payload.study_goal,
+      payload.platform
     )
   pure ()
   where
     query :: Query
     query =
       "INSERT INTO anonymous_onboarding_progress \
-      \(onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal) \
-      \VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+      \(onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal, platform) \
+      \VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
       \ON CONFLICT (onboarding_session_id) \
       \DO UPDATE SET \
       \ last_step = EXCLUDED.last_step, \
@@ -78,6 +79,7 @@ upsertAnonymousProgress payload = do
       \ organization = COALESCE(EXCLUDED.organization, anonymous_onboarding_progress.organization), \
       \ motivation = COALESCE(EXCLUDED.motivation, anonymous_onboarding_progress.motivation), \
       \ study_goal = COALESCE(EXCLUDED.study_goal, anonymous_onboarding_progress.study_goal), \
+      \ platform = COALESCE(EXCLUDED.platform, anonymous_onboarding_progress.platform), \
       \ last_modified = CURRENT_TIMESTAMP"
 
 findAnonymousBySession :: MonadDB m => String -> m (Maybe AnonymousOnboardingProgress)

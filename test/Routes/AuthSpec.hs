@@ -7,6 +7,7 @@
 module Routes.AuthSpec (spec) where
 
 import Test.Hspec
+import Data.Aeson (eitherDecode)
 import qualified Data.Text as T
 import Data.Time (getCurrentTime, addUTCTime, secondsToNominalDiffTime)
 import Control.Monad.IO.Class
@@ -106,7 +107,7 @@ spec = describe "Routes.Auth" $ do
     it "claims anonymous onboarding during signup when onboarding_session_id is provided" $ do
       withCleanDb $ \conn -> do
         let sessionId = "signup-claim-session-1"
-        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a habit") (Just "0-5 mins")
+        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a habit") (Just "0-5 mins") Nothing
         _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress anonPayload
 
         let user = mkTestUser "signup-claim-user" "signup-claim@example.com" "password"
@@ -238,6 +239,13 @@ spec = describe "Routes.Auth" $ do
         newUserData.verified `shouldBe` False
 
   describe "anonymous onboarding progress" $ do
+    it "decodes legacy anonymous onboarding progress JSON without platform" $ do
+      let decoded =
+            eitherDecode "{\"onboarding_session_id\":\"anon-session-legacy-json-1\",\"last_step\":\"elo\",\"stopped\":false}" ::
+              Either String AnonymousOnboardingProgressPayload
+      payload <- expectRight decoded
+      payload.platform `shouldBe` Nothing
+
     it "stores and reads anonymous onboarding progress by session id" $ do
       withCleanDb $ \conn -> do
         let payload =
@@ -250,6 +258,7 @@ spec = describe "Routes.Auth" $ do
                 (Just "Lichess")
                 Nothing
                 Nothing
+                (Just "ios")
         saveResult <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
         Msg message <- expectRight saveResult
         message `shouldBe` "Successfully saved anonymous onboarding progress."
@@ -261,7 +270,44 @@ spec = describe "Routes.Auth" $ do
         progress.chess_level `shouldBe` Just "beginner"
         progress.elo `shouldBe` Just "0-800"
         progress.organization `shouldBe` Just "Lichess"
+        progress.platform `shouldBe` Just "ios"
         progress.claimed_by_user `shouldBe` Nothing
+
+    it "accepts anonymous onboarding progress without platform for backwards compatibility" $ do
+      withCleanDb $ \conn -> do
+        let payload =
+              AnonymousOnboardingProgressPayload
+                "anon-session-backcompat-1"
+                "elo"
+                False
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+        saveResult <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
+        Msg message <- expectRight saveResult
+        message `shouldBe` "Successfully saved anonymous onboarding progress."
+
+        progress <- expectRight =<< runTestApp conn (OnboardingRoutes.getAnonymousOnboardingProgress "anon-session-backcompat-1")
+        progress.platform `shouldBe` Nothing
+
+    it "rejects unsupported anonymous onboarding platforms" $ do
+      withCleanDb $ \conn -> do
+        let payload =
+              AnonymousOnboardingProgressPayload
+                "anon-session-platform-invalid-1"
+                "elo"
+                False
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                (Just "web")
+        result <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
+        result `shouldSatisfy` isLeft'
 
   describe "apple auth endpoint shape" $ do
     it "exposes POST /auth/apple and expects SocialAuthRequest JSON" $ do
