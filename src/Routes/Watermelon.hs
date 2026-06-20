@@ -33,9 +33,11 @@ import Models.Watermelon (PullParams(..), ChangesResponse(..), TableChanges(..),
 import Repo.User as User
 import Repo.UserCardView as UserCardView
 import Repo.UserDeckView as UserDeckView
+import Repo.UserExplanationView as UserExplanationView
 import Repo.Utils (ensureM, notNull, flattenChangeset, neitherM, neither, orThrow, arrayLength, getUTCNow, ensure, validateOrFailWith)
 import Models.UserCardView
 import Models.UserDeckView
+import Models.UserExplanationView
 import qualified Repo.Deck as Deck
 import Models.Deck (Deck)
 import Models.User (User(..))
@@ -91,9 +93,20 @@ mkSchemaV2Changes changes = object
   , "user_deck_views" .= mkSchemaV2UserDeckViewChanges changes.user_deck_views
   ]
 
+mkSchemaV3Changes :: Changes -> Value
+mkSchemaV3Changes changes = object
+  [ "user_card_views" .= changes.user_card_views
+  , "user_deck_views" .= changes.user_deck_views
+  ]
+
 toPullPayload :: Integer -> ChangesResponse -> Value
 toPullPayload schemaVersion response
-  | schemaVersion >= 3 = toJSON response
+  | schemaVersion >= 4 = toJSON response
+  | schemaVersion == 3 =
+      object
+        [ "changes" .= mkSchemaV3Changes response.changes
+        , "timestamp" .= response.timestamp
+        ]
   | schemaVersion == 2 =
       object
         [ "changes" .= mkSchemaV2Changes response.changes
@@ -119,8 +132,17 @@ pullRoute username PullParams {lastPulledAt } = do
     (UserCardView.updatedSince username)
     (UserCardView.deletedSince username)
     since
+  changesUev <- mkChangesFor
+    (UserExplanationView.createdSince username)
+    (UserExplanationView.updatedSince username)
+    (UserExplanationView.deletedSince username)
+    since
   pure $ ChangesResponse 
-    { changes   = Changes { user_card_views = changesUcv, user_deck_views = changesUdv }
+    { changes   = Changes
+        { user_card_views = changesUcv
+        , user_deck_views = changesUdv
+        , user_explanation_views = changesUev
+        }
     , timestamp = now
     }
 
@@ -177,9 +199,11 @@ validateOwnership user changes =
   where
     allUCVs = flattenChangeset created updated (user_card_views changes)
     allUDVs = flattenChangeset created updated (user_deck_views changes)
+    allExplanationViews = flattenChangeset created updated (user_explanation_views changes)
     ownsAll who _ =
          all ((== who) . Models.UserCardView.userId) allUCVs
       && all ((== who) . Models.UserDeckView.userId) allUDVs
+      && all ((== who) . Models.UserExplanationView.userId) allExplanationViews
 
 updateUser :: [UserCardView] -> String -> AppM User
 updateUser cards username = do
@@ -219,16 +243,21 @@ pushRoute user PushParams {lastPulledAt, changes} = do
   ensure recreatedDeletedDeckError (not (or recreatedDeletedDecks))
   let ucvitems = flattenChangeset created updated (user_card_views changes)
       udvitems = flattenChangeset created updated (user_deck_views changes)
+      explanationItems = flattenChangeset created updated (user_explanation_views changes)
+      hasExplanationChanges = not (null explanationItems) || not (null changes.user_explanation_views.deleted)
   now <- liftIO getUTCNow
   validateOrFailWith infeasibleError (reportInfeasibleCardUpdated now) (UserCardView.infeasibleUpdated now) changes.user_card_views.updated
   validateOrFailWith infeasibleError (reportInfeasibleCardCreated now lastPulledAt) (pure . UserCardView.infeasibleCreated now lastPulledAt) changes.user_card_views.created
   ensureM mergeError $ neitherM [
     UserDeckView.modified user.username since udvitems,
-    UserCardView.modified user.username since ucvitems ]
+    UserCardView.modified user.username since ucvitems,
+    (hasExplanationChanges &&) <$> UserExplanationView.modified user.username since explanationItems ]
   User {xp, streak} <- updateUser changes.user_card_views.updated user.username
   mapM_ (UserDeckView.insertOrUpdate since) udvitems
   mapM_ (UserCardView.insertOrUpdate since) ucvitems
+  mapM_ (UserExplanationView.insertOrUpdate since) explanationItems
   mapM_ (UserCardView.delete user.username since) changes.user_card_views.deleted
+  mapM_ (UserExplanationView.delete user.username since) changes.user_explanation_views.deleted
   mapM_ (UserDeckView.delete user.username since) changes.user_deck_views.deleted
   -- TODO: do these as a background task
   mapM_ (Deck.insertOrUpdate . UserDeckView.userDeckToDeck) $ filter UserDeckView.authored udvitems

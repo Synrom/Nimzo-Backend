@@ -16,6 +16,7 @@ import Models.Deck (Deck(..))
 import Repo.Utils (notNull, one, orMinTime, removePrefix)
 import Repo.Classes
 import qualified Repo.UserCardView
+import qualified Repo.UserExplanationView
 import Control.Monad.IO.Class (MonadIO(liftIO))
 
 returnFields :: Query
@@ -124,6 +125,8 @@ delete username deletedAt id = do
     [] -> pure ()
     [DatabaseTime createdAt] -> do
       execute "DELETE FROM decks WHERE user_deck_id = ?" (Only markedId)
+      explanationIds <- Repo.UserExplanationView.findOfUDV markedId
+      mapM_ (Repo.UserExplanationView.delete username deletedAt . unmarkString username) explanationIds
       ucv_ids <- findCardsOfUDV markedId
       mapM_ (Repo.UserCardView.delete username deletedAt . unmarkString username) ucv_ids
       execute "DELETE FROM user_deck_views WHERE id = ?" (Only markedId)

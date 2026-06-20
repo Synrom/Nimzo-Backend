@@ -9,6 +9,7 @@ module Repo.Deck
     listContinuations,
     searchContinuations,
     listCardsOfDeck,
+    listExplanationsOfDeck,
     saveRating,
     saveDeckImage,
     savePromotion,
@@ -16,12 +17,13 @@ module Repo.Deck
   )
 where
 
-import Models.Card (CardQuery, PagedCards)
+import Models.Card (DeckContentQuery, PagedCards)
 import Models.Deck (Deck)
 import Models.DeckDetails (DeckDetails)
 import Models.DeckImage (DeckImageUploadRequest, DeckImageUploadResponse)
 import Models.DeckPromotion (DeckPromotionRequest, DeckPromotionResponse)
 import Models.DeckSearch (DeckSearchResult, SearchContinuationsResponse)
+import Models.UserExplanationView (PagedExplanations)
 import Models.Watermelon (JsonableMsg)
 import Repo.Classes (MonadDB)
 import qualified Repo.Deck.Media as Media
@@ -55,8 +57,11 @@ listContinuations = Query.listContinuations
 searchContinuations :: MonadDB m => String -> Maybe String -> Maybe Integer -> Maybe Integer -> m SearchContinuationsResponse
 searchContinuations = Query.searchContinuations
 
-listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
+listCardsOfDeck :: MonadDB m => DeckContentQuery -> m PagedCards
 listCardsOfDeck = Query.listCardsOfDeck
+
+listExplanationsOfDeck :: MonadDB m => DeckContentQuery -> m PagedExplanations
+listExplanationsOfDeck = Query.listExplanationsOfDeck
 
 saveRating :: MonadDB m => String -> Integer -> Integer -> m JsonableMsg
 saveRating = Query.saveRating

@@ -14,6 +14,7 @@ module Repo.Deck.Query
     listContinuations,
     searchContinuations,
     listCardsOfDeck,
+    listExplanationsOfDeck,
     saveRating,
   )
 where
@@ -24,10 +25,11 @@ import Data.String.HT (trim)
 import Repo.Classes
 import Repo.Utils (ensure, notNull, one, removePrefix, safeLast)
 import App.Error (AppError (..))
-import Models.Card (Card (..), CardQuery (..), PagedCards (..), PendingCard (..))
+import Models.Card (Card (..), DeckContentQuery (..), PagedCards (..), PendingCard (..))
 import Models.Deck (Deck (..))
 import Models.DeckDetails (DeckDetails (..))
 import Models.DeckSearch (DeckSearchResult, SearchContinuation (..), SearchContinuationsResponse (..))
+import Models.UserExplanationView (Explanation (..), PagedExplanations (..), PendingExplanation (..))
 import Models.Watermelon (JsonableMsg (Msg))
 
 returnFields :: Query
@@ -160,6 +162,14 @@ paginateCards pendingCards = case safeLast pendingCards of
     unpend (PendingCard moves title color _) = Card moves title color
     cards = map unpend pendingCards
 
+paginateExplanations :: [PendingExplanation] -> PagedExplanations
+paginateExplanations pendingExplanations = case safeLast pendingExplanations of
+  Nothing -> PagedExplanations Nothing explanations
+  Just explanation -> PagedExplanations (Just explanation.id) explanations
+  where
+    unpend (PendingExplanation fen move text visualizers _) = Explanation fen move text visualizers
+    explanations = map unpend pendingExplanations
+
 buildContinuationQuery :: Query -> Query -> [Action] -> String -> (Query, [Action])
 buildContinuationQuery sourceSql movesExpr baseParams prefix
   | null prefix =
@@ -248,6 +258,38 @@ buildDecksQuery prefix mColor mLimit =
 normalizeLimit :: Maybe Integer -> Maybe Integer
 normalizeLimit = fmap (max 0)
 
+maxDeckContentLimit :: Integer
+maxDeckContentLimit = 100
+
+clampDeckContentQuery :: DeckContentQuery -> DeckContentQuery
+clampDeckContentQuery query = query {limit = min maxDeckContentLimit query.limit}
+
+buildDeckContentPageQuery
+  :: DeckContentQuery
+  -> String
+  -> Query
+  -> (String -> (Query, [Action]))
+  -> (Query, [Action])
+buildDeckContentPageQuery rawQuery userDeckId baseSql buildPrefixCondition =
+  (baseSql <> cursorCondition <> prefixCondition <> " ORDER BY id LIMIT ?", finalParams)
+  where
+    pageQuery = clampDeckContentQuery rawQuery
+    finalParams = [toField userDeckId] <> cursorParams <> prefixParams <> [toField pageQuery.limit]
+    (cursorCondition, cursorParams) = case rawQuery.cursor of
+      Nothing -> ("", [])
+      Just next -> (" AND id > ?", [toField next])
+    (prefixCondition, prefixParams) = case rawQuery.prefix of
+      Nothing -> ("", [])
+      Just p -> buildPrefixCondition p
+
+movesPrefixCondition :: String -> (Query, [Action])
+movesPrefixCondition prefix =
+  (" AND (moves = ? OR moves LIKE ? || ' %')", [toField prefix, toField prefix])
+
+fenPrefixCondition :: String -> (Query, [Action])
+fenPrefixCondition prefix =
+  (" AND (fen = ? OR fen LIKE ? || '%')", [toField prefix, toField prefix])
+
 listContinuations :: MonadDB m => String -> String -> m [String]
 listContinuations userDeckId prefix =
   map fromOnly <$> runQuery sql params
@@ -275,27 +317,29 @@ searchContinuations prefix mColor mDeckLimit mContinuationLimit =
         mContinuationLimit
     (decksSql, decksParams) = buildDecksQuery prefix mColor mDeckLimit
 
-listCardsOfDeck :: MonadDB m => CardQuery -> m PagedCards
+listCardsOfDeck :: MonadDB m => DeckContentQuery -> m PagedCards
 listCardsOfDeck rawQuery = do
-  let cardQuery = rawQuery {limit = min 100 rawQuery.limit}
-  deck <- find cardQuery.deckId
+  let pageQuery = clampDeckContentQuery rawQuery
+  deck <- find pageQuery.deckId
   case rawQuery.cursor of
     Nothing -> do
-      _ <- execute "UPDATE decks SET download_count = download_count + 1 WHERE id = ?" (Only cardQuery.deckId)
+      _ <- execute "UPDATE decks SET download_count = download_count + 1 WHERE id = ?" (Only pageQuery.deckId)
       pure ()
     Just _ -> pure ()
-  let finalParams = [toField deck.user_deck_id] <> cursorParams <> prefixParams <> [toField cardQuery.limit]
-  paginateCards <$> runQuery finalSql finalParams
+  let (sql, params) = buildDeckContentPageQuery rawQuery deck.user_deck_id baseSql movesPrefixCondition
+  paginateCards <$> runQuery sql params
   where
     fields = " moves, title, color, id "
     baseSql = "SELECT" <> fields <> "FROM user_card_views WHERE user_deck_id=?"
-    (cursorCondition, cursorParams) = case rawQuery.cursor of
-      Nothing -> ("", [])
-      Just next -> (" AND id > ?", [toField next])
-    (prefixCondition, prefixParams) = case rawQuery.prefix of
-      Nothing -> ("", [])
-      Just p -> (" AND (moves = ? OR moves LIKE ? || ' %')", [toField p, toField p])
-    finalSql = baseSql <> cursorCondition <> prefixCondition <> " ORDER BY id LIMIT ?"
+
+listExplanationsOfDeck :: MonadDB m => DeckContentQuery -> m PagedExplanations
+listExplanationsOfDeck rawQuery = do
+  deck <- find rawQuery.deckId
+  let (sql, params) = buildDeckContentPageQuery rawQuery deck.user_deck_id baseSql fenPrefixCondition
+  paginateExplanations <$> runQuery sql params
+  where
+    fields = " fen, move, text, visualizers, id "
+    baseSql = "SELECT" <> fields <> "FROM user_explanation_views WHERE user_deck_id=?"
 
 saveRating :: MonadDB m => String -> Integer -> Integer -> m JsonableMsg
 saveRating username deckId ratingValue = do
