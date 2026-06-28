@@ -67,6 +67,19 @@ expectCreatedUserDeckObject value = do
     Aeson.Success (_ :: [Value]) -> error "Expected exactly one created deck entry"
     Aeson.Error err -> error $ "Expected created deck array but got: " ++ err
 
+expectCreatedUserCardObject :: Value -> IO (KeyMap.KeyMap Value)
+expectCreatedUserCardObject value = do
+  let Object root = value
+  changesValue <- expectObjectField "changes" root
+  let Object changesObj = changesValue
+  cardsValue <- expectObjectField "user_card_views" changesObj
+  let Object cardsObj = cardsValue
+  createdValue <- expectObjectField "created" cardsObj
+  case Aeson.fromJSON createdValue of
+    Aeson.Success [Object firstCard] -> pure firstCard
+    Aeson.Success (_ :: [Value]) -> error "Expected exactly one created card entry"
+    Aeson.Error err -> error $ "Expected created card array but got: " ++ err
+
 spec :: Spec
 spec = describe "Routes.Watermelon" $ do
 
@@ -178,7 +191,7 @@ spec = describe "Routes.Watermelon" $ do
         KeyMap.lookup "new_cards_today" firstDeck `shouldSatisfy` (/= Nothing)
         KeyMap.lookup "last_study_date" firstDeck `shouldSatisfy` (/= Nothing)
 
-    it "omits explanation changes for schema version 3" $ do
+    it "omits card fen and explanation changes for schema version 3" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "pullv3explain" "pullv3explain@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert user
@@ -186,10 +199,15 @@ spec = describe "Routes.Watermelon" $ do
 
         let deck = mkTestUserDeckView "deck_v3_explain" "pullv3explain" "V3 Explain Deck"
         _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
+        let card = (mkTestUserCardView "card_v3_fen" "pullv3explain" "deck_v3_explain" "e2e4")
+              { Repo.fen = Just "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" }
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now card
         let explanation = mkTestUserExplanationView "explanation_v3" "pullv3explain" "deck_v3_explain"
         _ <- runTestApp conn $ UserExplanationView.insertOrUpdate now explanation
 
         value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullv3explain" (PullParams Nothing 3 Nothing))
+        firstCard <- expectCreatedUserCardObject value
+        KeyMap.lookup "fen" firstCard `shouldBe` Nothing
         let Object root = value
         changesValue <- expectObjectField "changes" root
         let Object changesObj = changesValue
@@ -197,27 +215,56 @@ spec = describe "Routes.Watermelon" $ do
         KeyMap.lookup "user_card_views" changesObj `shouldSatisfy` (/= Nothing)
         KeyMap.lookup "user_explanation_views" changesObj `shouldBe` Nothing
 
-    it "includes explanation changes for schema version 4" $ do
+    it "includes card fen but omits explanation changes for schema version 4" $ do
       withCleanDb $ \conn -> do
-        let user = mkTestUser "pullv4explain" "pullv4explain@example.com" "password"
+        let user = mkTestUser "pullv4fen" "pullv4fen@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert user
         now <- getCurrentTime
 
-        let deck = mkTestUserDeckView "deck_v4_explain" "pullv4explain" "V4 Explain Deck"
+        let deck = mkTestUserDeckView "deck_v4_fen" "pullv4fen" "V4 Fen Deck"
         _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
-        let UserExplanationView userDeckId userId explanationViewId fen move _ _ =
-              mkTestUserExplanationView "explanation_v4" "pullv4explain" "deck_v4_explain"
-            explanation = UserExplanationView userDeckId userId explanationViewId fen move "A v4 explanation" "{\"quality\":\"good\"}"
+        let fenValue = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+            card = (mkTestUserCardView "card_v4_fen" "pullv4fen" "deck_v4_fen" "e2e4")
+              { Repo.fen = Just fenValue }
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now card
+        let explanation = mkTestUserExplanationView "explanation_v4_hidden" "pullv4fen" "deck_v4_fen"
         _ <- runTestApp conn $ UserExplanationView.insertOrUpdate now explanation
 
-        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "pullv4explain" (PullParams Nothing 4 Nothing)
+        value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullv4fen" (PullParams Nothing 4 Nothing))
+        firstCard <- expectCreatedUserCardObject value
+        KeyMap.lookup "fen" firstCard `shouldBe` Just (String (fromString fenValue))
+        let Object root = value
+        changesValue <- expectObjectField "changes" root
+        let Object changesObj = changesValue
+        KeyMap.lookup "user_explanation_views" changesObj `shouldBe` Nothing
+
+    it "includes explanation changes and card fen for schema version 5" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pullv5explain" "pullv5explain@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        now <- getCurrentTime
+
+        let deck = mkTestUserDeckView "deck_v5_explain" "pullv5explain" "V5 Explain Deck"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
+        let fenValue = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+            card = (mkTestUserCardView "card_v5_fen" "pullv5explain" "deck_v5_explain" "e2e4")
+              { Repo.fen = Just fenValue }
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now card
+        let UserExplanationView userDeckId userId explanationViewId fen move _ _ =
+              mkTestUserExplanationView "explanation_v5" "pullv5explain" "deck_v5_explain"
+            explanation = UserExplanationView userDeckId userId explanationViewId fen move "A v5 explanation" "{\"quality\":\"good\"}"
+        _ <- runTestApp conn $ UserExplanationView.insertOrUpdate now explanation
+
+        result <- runTestApp conn $ Routes.Watermelon.pullRouteVersioned "pullv5explain" (PullParams Nothing 5 Nothing)
         response <- expectPullResponse result
 
+        length response.changes.user_card_views.created `shouldBe` 1
+        (head response.changes.user_card_views.created).fen `shouldBe` Just fenValue
         length response.changes.user_explanation_views.created `shouldBe` 1
         let pulledExplanation = head response.changes.user_explanation_views.created
-        pulledExplanation.explanationViewId `shouldBe` "explanation_v4"
-        pulledExplanation.userDeckId `shouldBe` "deck_v4_explain"
-        pulledExplanation.text `shouldBe` "A v4 explanation"
+        pulledExplanation.explanationViewId `shouldBe` "explanation_v5"
+        pulledExplanation.userDeckId `shouldBe` "deck_v5_explain"
+        pulledExplanation.text `shouldBe` "A v5 explanation"
         pulledExplanation.visualizers `shouldBe` "{\"quality\":\"good\"}"
 
   describe "pushRoute" $ do
@@ -273,6 +320,30 @@ spec = describe "Routes.Watermelon" $ do
         created <- expectRight cards
         length created `shouldBe` 1
 
+    it "rejects user card fen longer than 92 characters" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pushfenlong" "pushfenlong@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        let deck = mkTestUserDeckView "deck_for_long_fen" "pushfenlong" "Long Fen Deck"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate minTime deck
+
+        now <- getCurrentTime
+        let lastPulled = floor $ utcTimeToPOSIXSeconds now - 10
+            longFen = replicate 93 'x'
+            newCard = (mkTestUserCardView "card_long_fen" "pushfenlong" "deck_for_long_fen" "e2e4")
+              { Repo.fen = Just longFen }
+            cardChanges = TableChanges [newCard] [] []
+            changeSet = Changes { user_card_views = cardChanges, user_deck_views = TableChanges [] [] [], user_explanation_views = emptyExplanationChanges }
+            pushParams = PushParams lastPulled changeSet
+            authUser = AUser "pushfenlong" False now
+
+        result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
+        err <- expectLeft result
+        case err of
+          Internal msg -> msg `shouldBe` "{\"msg\":\"Invalid card fen.\"}"
+          _ -> expectationFailure "Test Env should throw everything as internal"
+
     it "successfully pushes new user explanation views" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "pushexplain" "pushexplain@example.com" "password"
@@ -306,10 +377,13 @@ spec = describe "Routes.Watermelon" $ do
         length created `shouldBe` 1
         (head created).explanationViewId `shouldBe` "explanation1"
 
-    it "decodes older push payloads without explanation changes as empty" $ do
-      let payload = "{\"lastPulledAt\":1,\"changes\":{\"user_card_views\":{\"created\":[],\"updated\":[],\"deleted\":[]},\"user_deck_views\":{\"created\":[],\"updated\":[],\"deleted\":[]}}}"
+    it "decodes older push payloads without card fen or explanation changes" $ do
+      let payload = "{\"lastPulledAt\":1,\"changes\":{\"user_card_views\":{\"created\":[{\"num_correct_trials\":0,\"next_request_at\":0,\"user_id\":\"legacyuser\",\"user_deck_id\":\"legacydeck\",\"id\":\"legacycard\",\"moves\":\"e2e4\",\"title\":\"Legacy Card\",\"color\":\"wh\"}],\"updated\":[],\"deleted\":[]},\"user_deck_views\":{\"created\":[],\"updated\":[],\"deleted\":[]}}}"
       case Aeson.eitherDecode payload of
-        Right (PushParams _ changes) -> changes.user_explanation_views `shouldBe` emptyExplanationChanges
+        Right (PushParams _ changes) -> do
+          changes.user_explanation_views `shouldBe` emptyExplanationChanges
+          length changes.user_card_views.created `shouldBe` 1
+          (head changes.user_card_views.created).fen `shouldBe` Nothing
         Left err -> expectationFailure err
 
     it "updates existing items" $ do

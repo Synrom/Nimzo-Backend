@@ -67,56 +67,50 @@ mkChangesFor
 mkChangesFor created updated deleted t =
   TableChanges <$> created t <*> updated t <*> deleted t
 
-mkLegacyUserDeckViewChanges :: TableChanges UserDeckView -> Value
-mkLegacyUserDeckViewChanges changes = object
-  [ "created" .= map legacyUserDeckView changes.created
-  , "updated" .= map legacyUserDeckView changes.updated
+mkTableChangesValue :: (a -> Value) -> TableChanges a -> Value
+mkTableChangesValue rowToValue changes = object
+  [ "created" .= map rowToValue changes.created
+  , "updated" .= map rowToValue changes.updated
   , "deleted" .= changes.deleted
   ]
 
-mkSchemaV2UserDeckViewChanges :: TableChanges UserDeckView -> Value
-mkSchemaV2UserDeckViewChanges changes = object
-  [ "created" .= map schemaV2UserDeckView changes.created
-  , "updated" .= map schemaV2UserDeckView changes.updated
-  , "deleted" .= changes.deleted
-  ]
+supportsDeckColor :: Integer -> Bool
+supportsDeckColor schemaVersion = schemaVersion >= 2
 
-mkLegacyChanges :: Changes -> Value
-mkLegacyChanges changes = object
-  [ "user_card_views" .= changes.user_card_views
-  , "user_deck_views" .= mkLegacyUserDeckViewChanges changes.user_deck_views
-  ]
+supportsDeckStudyFields :: Integer -> Bool
+supportsDeckStudyFields schemaVersion = schemaVersion >= 3
 
-mkSchemaV2Changes :: Changes -> Value
-mkSchemaV2Changes changes = object
-  [ "user_card_views" .= changes.user_card_views
-  , "user_deck_views" .= mkSchemaV2UserDeckViewChanges changes.user_deck_views
-  ]
+supportsCardFen :: Integer -> Bool
+supportsCardFen schemaVersion = schemaVersion >= 4
 
-mkSchemaV3Changes :: Changes -> Value
-mkSchemaV3Changes changes = object
-  [ "user_card_views" .= changes.user_card_views
-  , "user_deck_views" .= changes.user_deck_views
-  ]
+supportsExplanations :: Integer -> Bool
+supportsExplanations schemaVersion = schemaVersion >= 5
+
+deckViewForSchema :: Integer -> UserDeckView -> Value
+deckViewForSchema schemaVersion
+  | supportsDeckStudyFields schemaVersion = toJSON
+  | supportsDeckColor schemaVersion = schemaV2UserDeckView
+  | otherwise = legacyUserDeckView
+
+cardViewForSchema :: Integer -> UserCardView -> Value
+cardViewForSchema schemaVersion
+  | supportsCardFen schemaVersion = toJSON
+  | otherwise = legacyUserCardView
+
+mkChangesForSchema :: Integer -> Changes -> Value
+mkChangesForSchema schemaVersion changes =
+  if supportsExplanations schemaVersion
+    then toJSON changes
+    else object
+      [ "user_card_views" .= mkTableChangesValue (cardViewForSchema schemaVersion) changes.user_card_views
+      , "user_deck_views" .= mkTableChangesValue (deckViewForSchema schemaVersion) changes.user_deck_views
+      ]
 
 toPullPayload :: Integer -> ChangesResponse -> Value
-toPullPayload schemaVersion response
-  | schemaVersion >= 4 = toJSON response
-  | schemaVersion == 3 =
-      object
-        [ "changes" .= mkSchemaV3Changes response.changes
-        , "timestamp" .= response.timestamp
-        ]
-  | schemaVersion == 2 =
-      object
-        [ "changes" .= mkSchemaV2Changes response.changes
-        , "timestamp" .= response.timestamp
-        ]
-  | otherwise =
-      object
-        [ "changes" .= mkLegacyChanges response.changes
-        , "timestamp" .= response.timestamp
-        ]
+toPullPayload schemaVersion response = object
+  [ "changes" .= mkChangesForSchema schemaVersion response.changes
+  , "timestamp" .= response.timestamp
+  ]
 
 pullRoute :: String -> PullParams -> AppM ChangesResponse
 pullRoute username PullParams {lastPulledAt } = do
@@ -175,6 +169,18 @@ schemaV2UserDeckView deck = object
   , "num_cards_total" .= deck.numCardsTotal
   ]
 
+legacyUserCardView :: UserCardView -> Value
+legacyUserCardView card = object
+  [ "num_correct_trials" .= card.numCorrectTrials
+  , "next_request_at" .= card.nextRequest
+  , "user_id" .= card.userId
+  , "user_deck_id" .= card.userDeckId
+  , "id" .= card.ucvId
+  , "moves" .= card.moves
+  , "title" .= card.title
+  , "color" .= card.color
+  ]
+
 pullRouteVersioned :: String -> PullParams -> AppM Value
 pullRouteVersioned username params = do
   response <- pullRoute username params
@@ -191,6 +197,18 @@ recreatedDeletedDeckError = MergeConflict "Cannot recreate a deleted deck id."
 
 infeasibleError :: AppError
 infeasibleError = Unauthorized "Number of trials is infeasible."
+
+invalidCardFen :: AppError
+invalidCardFen = Unauthorized "Invalid card fen."
+
+cardFenMaxLength :: Int
+cardFenMaxLength = 92
+
+validateCardFen :: [UserCardView] -> AppM ()
+validateCardFen cards =
+  ensure invalidCardFen $ all validFen cards
+  where
+    validFen card = maybe True ((<= cardFenMaxLength) . length) card.fen
 
 validateOwnership :: AuthenticatedUser -> Changes -> AppM ()
 validateOwnership user changes =
@@ -245,6 +263,7 @@ pushRoute user PushParams {lastPulledAt, changes} = do
       udvitems = flattenChangeset created updated (user_deck_views changes)
       explanationItems = flattenChangeset created updated (user_explanation_views changes)
       hasExplanationChanges = not (null explanationItems) || not (null changes.user_explanation_views.deleted)
+  validateCardFen ucvitems
   now <- liftIO getUTCNow
   validateOrFailWith infeasibleError (reportInfeasibleCardUpdated now) (UserCardView.infeasibleUpdated now) changes.user_card_views.updated
   validateOrFailWith infeasibleError (reportInfeasibleCardCreated now lastPulledAt) (pure . UserCardView.infeasibleCreated now lastPulledAt) changes.user_card_views.created

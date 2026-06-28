@@ -1,0 +1,2 @@
+ALTER TABLE user_card_views
+  ADD COLUMN IF NOT EXISTS fen VARCHAR(92);

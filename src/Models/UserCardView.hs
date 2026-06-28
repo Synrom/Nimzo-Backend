@@ -19,7 +19,8 @@ data UserCardView = UserCardView
     ucvId :: String,
     moves :: String,
     title :: String,
-    color :: String
+    color :: String,
+    fen :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
