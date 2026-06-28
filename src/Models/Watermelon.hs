@@ -4,12 +4,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Models.Watermelon where
 
 import GHC.Generics
 import Data.Text
-import Data.Aeson (ToJSON, FromJSON)
+import Data.Aeson (ToJSON, FromJSON (..), withObject, (.:), (.:?), (.!=))
 import Database.PostgreSQL.Simple (Connection, SqlError, FromRow)
 import Data.Proxy
 import Data.Int (Int64)
@@ -20,6 +21,7 @@ import Data.Time
 import Data.Maybe
 import Models.UserCardView (UserCardView(..))
 import Models.UserDeckView (UserDeckView(..))
+import Models.UserExplanationView (UserExplanationView(..))
 
 
 data TableChanges a = TableChanges {
@@ -33,11 +35,21 @@ instance FromJSON a => FromJSON (TableChanges a)
 
 data Changes = Changes {
   user_card_views :: TableChanges UserCardView,
-  user_deck_views :: TableChanges UserDeckView
+  user_deck_views :: TableChanges UserDeckView,
+  user_explanation_views :: TableChanges UserExplanationView
 } deriving (Eq, Show, Generic)
 
 instance ToJSON Changes
-instance FromJSON Changes
+instance FromJSON Changes where
+  parseJSON = withObject "Changes" $ \obj -> do
+    user_card_views <- obj .: "user_card_views"
+    user_deck_views <- obj .: "user_deck_views"
+    user_explanation_views <- obj .:? "user_explanation_views" .!= TableChanges [] [] []
+    pure $ Changes
+      { user_card_views = user_card_views
+      , user_deck_views = user_deck_views
+      , user_explanation_views = user_explanation_views
+      }
 
 data ChangesResponse = ChangesResponse {
   changes :: Changes,

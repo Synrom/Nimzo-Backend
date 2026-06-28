@@ -52,6 +52,9 @@ delete username = do
   -- delete all user cards
   execute "DELETE FROM user_card_views WHERE user_id = ?" (Only username)
 
+  -- delete all user explanations
+  execute "DELETE FROM user_explanation_views WHERE user_id = ?" (Only username)
+
   -- delete all decks
   execute "DELETE FROM decks WHERE author = ?" (Only username)
 
@@ -63,6 +66,9 @@ delete username = do
 
   -- delete all deleted_ucvs
   execute "DELETE FROM deleted_ucvs WHERE user_id = ?" (Only username)
+
+  -- delete all deleted_explanation_views
+  execute "DELETE FROM deleted_explanation_views WHERE user_id = ?" (Only username)
 
   -- delete user
   execute "DELETE FROM users WHERE username = ?" (Only username)

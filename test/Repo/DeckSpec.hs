@@ -22,6 +22,7 @@ import qualified Models.DeckDetails
 import Models.DeckSearch
 import Models.User
 import Models.Card
+import qualified Models.UserExplanationView as Explanation
 
 isLeft' :: Either a b -> Bool
 isLeft' (Left _) = True
@@ -627,7 +628,7 @@ spec = describe "Repo.Deck" $ do
         let featuredCardMoves = (head selected).featuredCardMoves
         featuredCardMoves `shouldBe` Just "d4 d5"
 
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck (CardQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
         pure ()
 
     it "returns empty list when deck has no cards" $ do
@@ -643,7 +644,7 @@ spec = describe "Repo.Deck" $ do
         let deck = mkTestDeck 0 "Empty Deck" "cardsuser" "udv_cards1"
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
-        let query = CardQuery Nothing 10 (Models.Deck.deckId inserted) Nothing
+        let query = DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing
         result <- runTestApp conn $ Repo.Deck.listCardsOfDeck query
         pagedCards <- expectRight result
 
@@ -669,7 +670,7 @@ spec = describe "Repo.Deck" $ do
             ("card_" ++ show i, "limituser" :: String, "udv_limit1" :: String, "e2e4" :: String, "Card " ++ show i, "wh" :: String, 0 :: Integer))
             [1..5 :: Int]
 
-        let query = CardQuery Nothing 3 (Models.Deck.deckId inserted) Nothing
+        let query = DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing
         result <- runTestApp conn $ Repo.Deck.listCardsOfDeck query
         pagedCards <- expectRight result
 
@@ -689,7 +690,7 @@ spec = describe "Repo.Deck" $ do
         let deck = mkTestDeck 0 "Test" "maxlimituser" "udv_maxlimit"
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
-        let query = CardQuery Nothing 1000 (Models.Deck.deckId inserted) Nothing
+        let query = DeckContentQuery Nothing 1000 (Models.Deck.deckId inserted) Nothing
         result <- runTestApp conn $ Repo.Deck.listCardsOfDeck query
 
         -- Should not fail, just limit to 100
@@ -717,7 +718,7 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
-        let cardQuery = CardQuery Nothing 10 (Models.Deck.deckId deck) Nothing
+        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing
         _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
@@ -745,7 +746,7 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
-        let cardQuery = CardQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing
+        let cardQuery = DeckContentQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing
         _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
@@ -753,6 +754,104 @@ spec = describe "Repo.Deck" $ do
         let beforeCount = fromOnly (head beforeRows)
         let afterCount = fromOnly (head afterRows)
         afterCount `shouldBe` beforeCount
+
+  describe "listExplanationsOfDeck" $ do
+    it "returns empty list when deck has no explanations" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "emptyexplainuser" "emptyexplain@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_empty_explain" :: String, "emptyexplainuser" :: String, "Empty Explanations" :: String, True, 0 :: Integer)
+          return ()
+
+        inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Empty Explanations" "emptyexplainuser" "udv_empty_explain"))
+
+        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing)
+        pagedExplanations <- expectRight result
+        let Explanation.PagedExplanations nextCursor items = pagedExplanations
+
+        items `shouldBe` []
+        nextCursor `shouldBe` Nothing
+
+    it "limits explanation results and returns the next cursor" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "explainlimituser" "explainlimit@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_explain_limit" :: String, "explainlimituser" :: String, "Many Explanations" :: String, True, 0 :: Integer)
+          return ()
+
+        inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Many Explanations" "explainlimituser" "udv_explain_limit"))
+
+        _ <- runTestApp conn $ do
+          mapM_ (\i -> execute
+            "INSERT INTO user_explanation_views (id, user_id, user_deck_id, fen, move, text, visualizers) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("explain_" ++ show i, "explainlimituser" :: String, "udv_explain_limit" :: String, "fen " ++ show i, "e2e4" :: String, "Explain " ++ show i, "{}" :: String))
+            [1..5 :: Int]
+
+        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing)
+        pagedExplanations <- expectRight result
+        let Explanation.PagedExplanations nextCursor items = pagedExplanations
+
+        length items `shouldBe` 3
+        nextCursor `shouldSatisfy` isJust
+
+    it "filters explanations by fen prefix" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "explainprefixuser" "explainprefix@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_explain_prefix" :: String, "explainprefixuser" :: String, "Prefix Explanations" :: String, True, 0 :: Integer)
+          return ()
+
+        inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Prefix Explanations" "explainprefixuser" "udv_explain_prefix"))
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_explanation_views (id, user_id, user_deck_id, fen, move, text, visualizers) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("prefix_explain_1" :: String, "explainprefixuser" :: String, "udv_explain_prefix" :: String, "rnbqkbnr/pppppppp" :: String, "e2e4" :: String, "Opening explanation" :: String, "{}" :: String)
+          _ <- execute "INSERT INTO user_explanation_views (id, user_id, user_deck_id, fen, move, text, visualizers) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("prefix_explain_2" :: String, "explainprefixuser" :: String, "udv_explain_prefix" :: String, "8/8/8/8" :: String, "d2d4" :: String, "Endgame explanation" :: String, "{}" :: String)
+          return ()
+
+        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) (Just "rnbqkbnr"))
+        pagedExplanations <- expectRight result
+        let Explanation.PagedExplanations _ items = pagedExplanations
+        let Explanation.Explanation fen _ explanationText _ = head items
+
+        length items `shouldBe` 1
+        fen `shouldBe` "rnbqkbnr/pppppppp"
+        explanationText `shouldBe` "Opening explanation"
+
+    it "does not increment deck download_count" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "explaindownloaduser" "explaindownload@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_explain_dl" :: String, "explaindownloaduser" :: String, "Explanation Download" :: String, True, 0 :: Integer)
+          return ()
+
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Explanation Download" "explaindownloaduser" "udv_explain_dl"))
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_explanation_views (id, user_id, user_deck_id, fen, move, text, visualizers) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("dl_explain_1" :: String, "explaindownloaduser" :: String, "udv_explain_dl" :: String, "fen" :: String, "e2e4" :: String, "Download explanation" :: String, "{}" :: String)
+          return ()
+
+        beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
+
+        afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+
+        fromOnly (head afterRows) `shouldBe` fromOnly (head beforeRows)
 
   describe "listContinuations" $ do
     it "returns distinct next moves for a single deck prefix" $ do

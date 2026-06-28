@@ -9,7 +9,7 @@ import GHC.Generics
 import Database.PostgreSQL.Simple (ToRow, FromRow)
 import Data.Time (UTCTime)
 
-data CardQuery = CardQuery
+data DeckContentQuery = DeckContentQuery
   { cursor :: Maybe String,
     limit  :: Integer,
     deckId :: Integer,
@@ -38,7 +38,7 @@ data PagedCards = PagedCards
   }
   deriving (Eq, Show, Generic)
 
-instance FromJSON CardQuery
+instance FromJSON DeckContentQuery
 instance ToJSON Card
 instance ToJSON PagedCards
 instance FromRow Card

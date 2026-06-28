@@ -28,14 +28,16 @@ import Models.DeckSearch (SearchContinuationsResponse, DeckSearchResult)
 import Models.DeckRating (DeckRatingRequest(..))
 import Models.Watermelon (JsonableMsg)
 import Repo.Deck
-import Models.Card (Card, CardQuery, PagedCards)
+import Models.Card (Card, DeckContentQuery, PagedCards)
+import Models.UserExplanationView (PagedExplanations)
 
 type API =
   "deck" :> "search" :> "full" :> QueryParam "query" String :> Get '[JSON] [DeckSearchResult]
   :<|> "deck" :> "search" :> "instant" :> QueryParam "query" String :> Get '[JSON] [DeckSearchResult]
   :<|> "deck" :> "featured" :> QueryParam "source" String :> QueryParam "limit" Integer :> Get '[JSON] [DeckSearchResult]
   :<|> "deck" :> "search" :> "continuations" :> QueryParam "prefix" String :> QueryParam "color" String :> QueryParam "limitDecks" Integer :> QueryParam "limitContinuations" Integer :> Get '[JSON] SearchContinuationsResponse
-  :<|> "deck" :> "cards" :> ReqBody '[JSON] CardQuery :> Post '[JSON] PagedCards
+  :<|> "deck" :> "cards" :> ReqBody '[JSON] DeckContentQuery :> Post '[JSON] PagedCards
+  :<|> "deck" :> "explanations" :> ReqBody '[JSON] DeckContentQuery :> Post '[JSON] PagedExplanations
   :<|> "deck" :> Capture "user_deck_id" String :> "continuations" :> QueryParam "prefix" String :> Get '[JSON] [String]
 
 type SecureAPI =
@@ -51,7 +53,8 @@ type Server =
   :<|> (Maybe String -> AppM [DeckSearchResult])
   :<|> (Maybe String -> Maybe Integer -> AppM [DeckSearchResult])
   :<|> (Maybe String -> Maybe String -> Maybe Integer -> Maybe Integer -> AppM SearchContinuationsResponse)
-  :<|> (CardQuery -> AppM PagedCards)
+  :<|> (DeckContentQuery -> AppM PagedCards)
+  :<|> (DeckContentQuery -> AppM PagedExplanations)
   :<|> (String -> Maybe String -> AppM [String])
 
 type SecureServer =
@@ -69,6 +72,7 @@ server =
   :<|> Repo.Deck.listFeatured
   :<|> (Repo.Deck.searchContinuations . fromMaybe "")
   :<|> Repo.Deck.listCardsOfDeck
+  :<|> Repo.Deck.listExplanationsOfDeck
   :<|> (\deckId mPrefix -> Repo.Deck.listContinuations deckId (fromMaybe "" mPrefix))
 
 secureServer :: AuthResult AuthenticatedUser -> SecureServer

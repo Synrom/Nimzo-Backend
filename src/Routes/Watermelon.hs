@@ -33,9 +33,11 @@ import Models.Watermelon (PullParams(..), ChangesResponse(..), TableChanges(..),
 import Repo.User as User
 import Repo.UserCardView as UserCardView
 import Repo.UserDeckView as UserDeckView
+import Repo.UserExplanationView as UserExplanationView
 import Repo.Utils (ensureM, notNull, flattenChangeset, neitherM, neither, orThrow, arrayLength, getUTCNow, ensure, validateOrFailWith)
 import Models.UserCardView
 import Models.UserDeckView
+import Models.UserExplanationView
 import qualified Repo.Deck as Deck
 import Models.Deck (Deck)
 import Models.User (User(..))
@@ -65,45 +67,50 @@ mkChangesFor
 mkChangesFor created updated deleted t =
   TableChanges <$> created t <*> updated t <*> deleted t
 
-mkLegacyUserDeckViewChanges :: TableChanges UserDeckView -> Value
-mkLegacyUserDeckViewChanges changes = object
-  [ "created" .= map legacyUserDeckView changes.created
-  , "updated" .= map legacyUserDeckView changes.updated
+mkTableChangesValue :: (a -> Value) -> TableChanges a -> Value
+mkTableChangesValue rowToValue changes = object
+  [ "created" .= map rowToValue changes.created
+  , "updated" .= map rowToValue changes.updated
   , "deleted" .= changes.deleted
   ]
 
-mkSchemaV2UserDeckViewChanges :: TableChanges UserDeckView -> Value
-mkSchemaV2UserDeckViewChanges changes = object
-  [ "created" .= map schemaV2UserDeckView changes.created
-  , "updated" .= map schemaV2UserDeckView changes.updated
-  , "deleted" .= changes.deleted
-  ]
+supportsDeckColor :: Integer -> Bool
+supportsDeckColor schemaVersion = schemaVersion >= 2
 
-mkLegacyChanges :: Changes -> Value
-mkLegacyChanges changes = object
-  [ "user_card_views" .= changes.user_card_views
-  , "user_deck_views" .= mkLegacyUserDeckViewChanges changes.user_deck_views
-  ]
+supportsDeckStudyFields :: Integer -> Bool
+supportsDeckStudyFields schemaVersion = schemaVersion >= 3
 
-mkSchemaV2Changes :: Changes -> Value
-mkSchemaV2Changes changes = object
-  [ "user_card_views" .= changes.user_card_views
-  , "user_deck_views" .= mkSchemaV2UserDeckViewChanges changes.user_deck_views
-  ]
+supportsCardFen :: Integer -> Bool
+supportsCardFen schemaVersion = schemaVersion >= 4
+
+supportsExplanations :: Integer -> Bool
+supportsExplanations schemaVersion = schemaVersion >= 5
+
+deckViewForSchema :: Integer -> UserDeckView -> Value
+deckViewForSchema schemaVersion
+  | supportsDeckStudyFields schemaVersion = toJSON
+  | supportsDeckColor schemaVersion = schemaV2UserDeckView
+  | otherwise = legacyUserDeckView
+
+cardViewForSchema :: Integer -> UserCardView -> Value
+cardViewForSchema schemaVersion
+  | supportsCardFen schemaVersion = toJSON
+  | otherwise = legacyUserCardView
+
+mkChangesForSchema :: Integer -> Changes -> Value
+mkChangesForSchema schemaVersion changes =
+  if supportsExplanations schemaVersion
+    then toJSON changes
+    else object
+      [ "user_card_views" .= mkTableChangesValue (cardViewForSchema schemaVersion) changes.user_card_views
+      , "user_deck_views" .= mkTableChangesValue (deckViewForSchema schemaVersion) changes.user_deck_views
+      ]
 
 toPullPayload :: Integer -> ChangesResponse -> Value
-toPullPayload schemaVersion response
-  | schemaVersion >= 3 = toJSON response
-  | schemaVersion == 2 =
-      object
-        [ "changes" .= mkSchemaV2Changes response.changes
-        , "timestamp" .= response.timestamp
-        ]
-  | otherwise =
-      object
-        [ "changes" .= mkLegacyChanges response.changes
-        , "timestamp" .= response.timestamp
-        ]
+toPullPayload schemaVersion response = object
+  [ "changes" .= mkChangesForSchema schemaVersion response.changes
+  , "timestamp" .= response.timestamp
+  ]
 
 pullRoute :: String -> PullParams -> AppM ChangesResponse
 pullRoute username PullParams {lastPulledAt } = do
@@ -119,8 +126,17 @@ pullRoute username PullParams {lastPulledAt } = do
     (UserCardView.updatedSince username)
     (UserCardView.deletedSince username)
     since
+  changesUev <- mkChangesFor
+    (UserExplanationView.createdSince username)
+    (UserExplanationView.updatedSince username)
+    (UserExplanationView.deletedSince username)
+    since
   pure $ ChangesResponse 
-    { changes   = Changes { user_card_views = changesUcv, user_deck_views = changesUdv }
+    { changes   = Changes
+        { user_card_views = changesUcv
+        , user_deck_views = changesUdv
+        , user_explanation_views = changesUev
+        }
     , timestamp = now
     }
 
@@ -153,6 +169,18 @@ schemaV2UserDeckView deck = object
   , "num_cards_total" .= deck.numCardsTotal
   ]
 
+legacyUserCardView :: UserCardView -> Value
+legacyUserCardView card = object
+  [ "num_correct_trials" .= card.numCorrectTrials
+  , "next_request_at" .= card.nextRequest
+  , "user_id" .= card.userId
+  , "user_deck_id" .= card.userDeckId
+  , "id" .= card.ucvId
+  , "moves" .= card.moves
+  , "title" .= card.title
+  , "color" .= card.color
+  ]
+
 pullRouteVersioned :: String -> PullParams -> AppM Value
 pullRouteVersioned username params = do
   response <- pullRoute username params
@@ -170,6 +198,18 @@ recreatedDeletedDeckError = MergeConflict "Cannot recreate a deleted deck id."
 infeasibleError :: AppError
 infeasibleError = Unauthorized "Number of trials is infeasible."
 
+invalidCardFen :: AppError
+invalidCardFen = Unauthorized "Invalid card fen."
+
+cardFenMaxLength :: Int
+cardFenMaxLength = 92
+
+validateCardFen :: [UserCardView] -> AppM ()
+validateCardFen cards =
+  ensure invalidCardFen $ all validFen cards
+  where
+    validFen card = maybe True ((<= cardFenMaxLength) . length) card.fen
+
 validateOwnership :: AuthenticatedUser -> Changes -> AppM ()
 validateOwnership user changes =
   if ownsAll user.username changes then pure ()
@@ -177,9 +217,11 @@ validateOwnership user changes =
   where
     allUCVs = flattenChangeset created updated (user_card_views changes)
     allUDVs = flattenChangeset created updated (user_deck_views changes)
+    allExplanationViews = flattenChangeset created updated (user_explanation_views changes)
     ownsAll who _ =
          all ((== who) . Models.UserCardView.userId) allUCVs
       && all ((== who) . Models.UserDeckView.userId) allUDVs
+      && all ((== who) . Models.UserExplanationView.userId) allExplanationViews
 
 updateUser :: [UserCardView] -> String -> AppM User
 updateUser cards username = do
@@ -219,16 +261,22 @@ pushRoute user PushParams {lastPulledAt, changes} = do
   ensure recreatedDeletedDeckError (not (or recreatedDeletedDecks))
   let ucvitems = flattenChangeset created updated (user_card_views changes)
       udvitems = flattenChangeset created updated (user_deck_views changes)
+      explanationItems = flattenChangeset created updated (user_explanation_views changes)
+      hasExplanationChanges = not (null explanationItems) || not (null changes.user_explanation_views.deleted)
+  validateCardFen ucvitems
   now <- liftIO getUTCNow
   validateOrFailWith infeasibleError (reportInfeasibleCardUpdated now) (UserCardView.infeasibleUpdated now) changes.user_card_views.updated
   validateOrFailWith infeasibleError (reportInfeasibleCardCreated now lastPulledAt) (pure . UserCardView.infeasibleCreated now lastPulledAt) changes.user_card_views.created
   ensureM mergeError $ neitherM [
     UserDeckView.modified user.username since udvitems,
-    UserCardView.modified user.username since ucvitems ]
+    UserCardView.modified user.username since ucvitems,
+    (hasExplanationChanges &&) <$> UserExplanationView.modified user.username since explanationItems ]
   User {xp, streak} <- updateUser changes.user_card_views.updated user.username
   mapM_ (UserDeckView.insertOrUpdate since) udvitems
   mapM_ (UserCardView.insertOrUpdate since) ucvitems
+  mapM_ (UserExplanationView.insertOrUpdate since) explanationItems
   mapM_ (UserCardView.delete user.username since) changes.user_card_views.deleted
+  mapM_ (UserExplanationView.delete user.username since) changes.user_explanation_views.deleted
   mapM_ (UserDeckView.delete user.username since) changes.user_deck_views.deleted
   -- TODO: do these as a background task
   mapM_ (Deck.insertOrUpdate . UserDeckView.userDeckToDeck) $ filter UserDeckView.authored udvitems
