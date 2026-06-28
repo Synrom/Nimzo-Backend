@@ -628,7 +628,7 @@ spec = describe "Repo.Deck" $ do
         let featuredCardMoves = (head selected).featuredCardMoves
         featuredCardMoves `shouldBe` Just "d4 d5"
 
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing))
         pure ()
 
     it "returns empty list when deck has no cards" $ do
@@ -644,8 +644,8 @@ spec = describe "Repo.Deck" $ do
         let deck = mkTestDeck 0 "Empty Deck" "cardsuser" "udv_cards1"
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
-        let query = DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing
-        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck query
+        let query = DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing Nothing
+        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
         pagedCards <- expectRight result
 
         cards pagedCards `shouldBe` []
@@ -670,8 +670,8 @@ spec = describe "Repo.Deck" $ do
             ("card_" ++ show i, "limituser" :: String, "udv_limit1" :: String, "e2e4" :: String, "Card " ++ show i, "wh" :: String, 0 :: Integer))
             [1..5 :: Int]
 
-        let query = DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing
-        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck query
+        let query = DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing Nothing
+        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
         pagedCards <- expectRight result
 
         length (cards pagedCards) `shouldBe` 3
@@ -690,8 +690,8 @@ spec = describe "Repo.Deck" $ do
         let deck = mkTestDeck 0 "Test" "maxlimituser" "udv_maxlimit"
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
-        let query = DeckContentQuery Nothing 1000 (Models.Deck.deckId inserted) Nothing
-        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck query
+        let query = DeckContentQuery Nothing 1000 (Models.Deck.deckId inserted) Nothing Nothing
+        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
 
         -- Should not fail, just limit to 100
         _ <- expectRight result
@@ -718,8 +718,8 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
-        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck cardQuery)
+        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
@@ -746,8 +746,8 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
-        let cardQuery = DeckContentQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck cardQuery)
+        let cardQuery = DeckContentQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing Nothing
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
@@ -768,7 +768,7 @@ spec = describe "Repo.Deck" $ do
 
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Empty Explanations" "emptyexplainuser" "udv_empty_explain"))
 
-        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing)
+        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing Nothing)
         pagedExplanations <- expectRight result
         let Explanation.PagedExplanations nextCursor items = pagedExplanations
 
@@ -793,7 +793,7 @@ spec = describe "Repo.Deck" $ do
             ("explain_" ++ show i, "explainlimituser" :: String, "udv_explain_limit" :: String, "fen " ++ show i, "e2e4" :: String, "Explain " ++ show i, "{}" :: String))
             [1..5 :: Int]
 
-        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing)
+        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing Nothing)
         pagedExplanations <- expectRight result
         let Explanation.PagedExplanations nextCursor items = pagedExplanations
 
@@ -819,7 +819,7 @@ spec = describe "Repo.Deck" $ do
             ("prefix_explain_2" :: String, "explainprefixuser" :: String, "udv_explain_prefix" :: String, "8/8/8/8" :: String, "d2d4" :: String, "Endgame explanation" :: String, "{}" :: String)
           return ()
 
-        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) (Just "rnbqkbnr"))
+        result <- runTestApp conn $ Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) (Just "rnbqkbnr") Nothing)
         pagedExplanations <- expectRight result
         let Explanation.PagedExplanations _ items = pagedExplanations
         let Explanation.Explanation fen _ explanationText _ = head items
@@ -847,7 +847,7 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing))
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listExplanationsOfDeck (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing))
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 

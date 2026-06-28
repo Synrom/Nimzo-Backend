@@ -160,6 +160,7 @@ test-suite Tests
       Repo.OnboardingSpec,
       Routes.AndroidSpec,
       Routes.AuthSpec,
+      Routes.DeckSpec,
       Routes.ExperimentSpec,
       Routes.UserSpec,
       Routes.WatermelonSpec

@@ -317,8 +317,8 @@ searchContinuations prefix mColor mDeckLimit mContinuationLimit =
         mContinuationLimit
     (decksSql, decksParams) = buildDecksQuery prefix mColor mDeckLimit
 
-listCardsOfDeck :: MonadDB m => DeckContentQuery -> m PagedCards
-listCardsOfDeck rawQuery = do
+listCardsOfDeck :: MonadDB m => Bool -> DeckContentQuery -> m PagedCards
+listCardsOfDeck includeFenCards rawQuery = do
   let pageQuery = clampDeckContentQuery rawQuery
   deck <- find pageQuery.deckId
   case rawQuery.cursor of
@@ -330,7 +330,10 @@ listCardsOfDeck rawQuery = do
   paginateCards <$> runQuery sql params
   where
     fields = " moves, title, color, id "
-    baseSql = "SELECT" <> fields <> "FROM user_card_views WHERE user_deck_id=?"
+    fenFilter
+      | includeFenCards = ""
+      | otherwise = " AND fen IS NULL"
+    baseSql = "SELECT" <> fields <> "FROM user_card_views WHERE user_deck_id=?" <> fenFilter
 
 listExplanationsOfDeck :: MonadDB m => DeckContentQuery -> m PagedExplanations
 listExplanationsOfDeck rawQuery = do
