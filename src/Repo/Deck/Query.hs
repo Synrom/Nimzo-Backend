@@ -235,7 +235,8 @@ buildDecksQuery prefix mColor mLimit =
       \  SELECT d.id AS deck_id, COUNT(*) AS nr_cards \
       \  FROM user_card_views ucv \
       \  JOIN decks d ON d.user_deck_id = ucv.user_deck_id \
-      \  WHERE d.is_public = TRUE"
+      \  WHERE d.is_public = TRUE \
+      \    AND ucv.fen IS NULL"
     (colorSql, colorParams) = buildColorFilter mColor
     (prefixSql, prefixParams)
       | null prefix = ("", [])
@@ -296,7 +297,7 @@ listContinuations userDeckId prefix =
   where
     (sql, params) =
       buildContinuationQuery
-        "FROM user_card_views WHERE user_deck_id = ?"
+        "FROM user_card_views WHERE user_deck_id = ? AND fen IS NULL"
         "moves"
         [toField userDeckId]
         prefix
@@ -310,7 +311,7 @@ searchContinuations prefix mColor mDeckLimit mContinuationLimit =
     (colorSql, colorParams) = buildColorFilter mColor
     (continuationSql, continuationParams) =
       buildSearchContinuationsQuery
-        ("FROM user_card_views ucv JOIN decks d ON d.user_deck_id = ucv.user_deck_id WHERE d.is_public = TRUE" <> colorSql)
+        ("FROM user_card_views ucv JOIN decks d ON d.user_deck_id = ucv.user_deck_id WHERE d.is_public = TRUE AND ucv.fen IS NULL" <> colorSql)
         "ucv.moves"
         colorParams
         prefix

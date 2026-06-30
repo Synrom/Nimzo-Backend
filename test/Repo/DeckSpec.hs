@@ -870,6 +870,33 @@ spec = describe "Repo.Deck" $ do
 
         continuations `shouldBe` ["Nc3", "Nf3"]
 
+    it "ignores cards with fen set" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "contfenuser" "contfen@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        _ <- insertDeckWithCards conn "contfenuser" "udv_cont_fen" "Continuation Fen Deck" True
+          [ "e4 e5 Nf3"
+          , "e4 c5"
+          ]
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ( "udv_cont_fen_card_fen" :: String
+            , "contfenuser" :: String
+            , "udv_cont_fen" :: String
+            , "e4 e6" :: String
+            , "Fen continuation" :: String
+            , "wh" :: String
+            , Just ("8/8/8/8/8/8/8/8 w - - 0 1" :: String)
+            , 0 :: Integer
+            )
+          return ()
+
+        result <- runTestApp conn $ Repo.Deck.listContinuations "udv_cont_fen" "e4"
+        continuations <- expectRight result
+
+        continuations `shouldBe` ["c5", "e5"]
+
   describe "searchContinuations" $ do
     it "returns continuations and deck counts for public decks only" $ do
       withCleanDb $ \conn -> do
@@ -898,6 +925,48 @@ spec = describe "Repo.Deck" $ do
         map (.deck.name) (decks response) `shouldBe` ["French", "Sicilian"]
         map (.deck_nr_cards) (decks response) `shouldBe` [2, 2]
         map (.deck.isPublic) (decks response) `shouldBe` [True, True]
+
+    it "ignores cards with fen set in continuations and matching deck counts" $ do
+      withCleanDb $ \conn -> do
+        let userA = mkTestUser "searchfenkeep" "searchfenkeep@example.com" "password"
+        let userB = mkTestUser "searchfenonly" "searchfenonly@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert userA
+        _ <- runTestApp conn $ Repo.User.insert userB
+
+        _ <- insertDeckWithCards conn "searchfenkeep" "udv_search_fen_keep" "Fen Keep" True
+          ["e4 e5"]
+        _ <- insertDeckWithCards conn "searchfenonly" "udv_search_fen_only" "Fen Only" True
+          []
+
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ( "udv_search_fen_keep_card_fen" :: String
+            , "searchfenkeep" :: String
+            , "udv_search_fen_keep" :: String
+            , "e4 c5" :: String
+            , "Fen ignored" :: String
+            , "wh" :: String
+            , Just ("8/8/8/8/8/8/8/8 w - - 0 1" :: String)
+            , 0 :: Integer
+            )
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ( "udv_search_fen_only_card_fen" :: String
+            , "searchfenonly" :: String
+            , "udv_search_fen_only" :: String
+            , "e4 d5" :: String
+            , "Fen only ignored" :: String
+            , "wh" :: String
+            , Just ("8/8/8/8/8/8/8/8 w - - 0 1" :: String)
+            , 0 :: Integer
+            )
+          return ()
+
+        result <- runTestApp conn $ Repo.Deck.searchContinuations "e4" Nothing Nothing Nothing
+        response <- expectRight result
+
+        continuations response `shouldBe` [SearchContinuation "e5" 1]
+        map (.deck.name) (decks response) `shouldBe` ["Fen Keep"]
+        map (.deck_nr_cards) (decks response) `shouldBe` [1]
 
     it "returns DeckSearchResult data for matching decks" $ do
       withCleanDb $ \conn -> do

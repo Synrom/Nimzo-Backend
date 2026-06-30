@@ -97,12 +97,20 @@ cardViewForSchema schemaVersion
   | supportsCardFen schemaVersion = toJSON
   | otherwise = legacyUserCardView
 
+cardChangesForSchema :: Integer -> TableChanges UserCardView -> TableChanges UserCardView
+cardChangesForSchema schemaVersion changes
+  | supportsCardFen schemaVersion = changes
+  | otherwise = changes
+      { created = filter ((== Nothing) . (.fen)) changes.created
+      , updated = filter ((== Nothing) . (.fen)) changes.updated
+      }
+
 mkChangesForSchema :: Integer -> Changes -> Value
 mkChangesForSchema schemaVersion changes =
   if supportsExplanations schemaVersion
     then toJSON changes
     else object
-      [ "user_card_views" .= mkTableChangesValue (cardViewForSchema schemaVersion) changes.user_card_views
+      [ "user_card_views" .= mkTableChangesValue (cardViewForSchema schemaVersion) (cardChangesForSchema schemaVersion changes.user_card_views)
       , "user_deck_views" .= mkTableChangesValue (deckViewForSchema schemaVersion) changes.user_deck_views
       ]
 
