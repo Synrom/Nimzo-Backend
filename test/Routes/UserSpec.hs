@@ -3,16 +3,64 @@
 module Routes.UserSpec (spec) where
 
 import Test.Hspec
+import Servant ((:<|>)(..))
+import Servant.Auth.Server (AuthResult(..))
 
 import TestHelpers
+import App.Error (AppError(..))
+import App.Auth (AuthenticatedUser)
+import Models.Feedback (Feedback(..), FeedbackPayload(..))
 import qualified Routes.Auth as AuthRoutes
+import qualified Routes.User as UserRoutes
 import qualified Routes.Onboarding as OnboardingRoutes
 import Models.Onboarding (OnboardingPreferences(..), OnboardingPreferencesPayload(..), AnonymousOnboardingProgressPayload(..), ClaimAnonymousOnboardingPayload(..))
 import Models.Watermelon (JsonableMsg(..))
 import qualified Repo.Onboarding as OnboardingRepo
+import qualified Repo.Feedback as FeedbackRepo
 
 spec :: Spec
-spec = describe "Routes.Onboarding (secure)" $ do
+spec = describe "Routes.User (secure)" $ do
+  describe "saveFeedback" $ do
+    it "stores feedback for the authenticated user" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "feedback-user" "feedback@example.com" "password"
+        _ <- runTestApp conn $ AuthRoutes.createUser user
+
+        result <- runTestApp conn $ UserRoutes.saveFeedback "feedback-user" (FeedbackPayload "  Great app  " 5)
+        Msg message <- expectRight result
+        message `shouldBe` "Successfully saved feedback."
+
+        stored <- expectRight =<< runTestApp conn (FeedbackRepo.findLatestByUsername "feedback-user")
+        case stored of
+          Nothing -> expectationFailure "Expected feedback to be stored"
+          Just (Feedback _ username text stars _) -> do
+            username `shouldBe` "feedback-user"
+            text `shouldBe` "Great app"
+            stars `shouldBe` 5
+
+    it "rejects feedback with stars outside the 1-5 range" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "feedback-invalid" "feedback-invalid@example.com" "password"
+        _ <- runTestApp conn $ AuthRoutes.createUser user
+
+        result <- runTestApp conn $ UserRoutes.saveFeedback "feedback-invalid" (FeedbackPayload "Needs work" 6)
+        err <- expectLeft result
+        case err of
+          Internal message -> message `shouldBe` "{\"msg\":\"Invalid feedback.\"}"
+          _ -> expectationFailure $ "Expected Internal test wrapper error but got: " ++ show err
+
+    it "denies unauthenticated users through the secure server" $ do
+      withCleanDb $ \conn -> do
+        let authResult = Indefinite :: AuthResult AuthenticatedUser
+        result <- runTestApp conn $ do
+          let (_ :<|> _ :<|> _ :<|> feedbackHandler) = UserRoutes.server authResult
+          feedbackHandler (FeedbackPayload "Great app" 5)
+
+        err <- expectLeft result
+        case err of
+          Internal message -> message `shouldBe` "{\"msg\":\"No access.\"}"
+          _ -> expectationFailure $ "Expected Internal test wrapper error but got: " ++ show err
+
   describe "saveOnboardingPreferences" $ do
     it "stores onboarding preferences for a user" $ do
       withCleanDb $ \conn -> do
