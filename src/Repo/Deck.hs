@@ -57,7 +57,7 @@ listContinuations = Query.listContinuations
 searchContinuations :: MonadDB m => String -> Maybe String -> Maybe Integer -> Maybe Integer -> m SearchContinuationsResponse
 searchContinuations = Query.searchContinuations
 
-listCardsOfDeck :: MonadDB m => DeckContentQuery -> m PagedCards
+listCardsOfDeck :: MonadDB m => Bool -> DeckContentQuery -> m PagedCards
 listCardsOfDeck = Query.listCardsOfDeck
 
 listExplanationsOfDeck :: MonadDB m => DeckContentQuery -> m PagedExplanations

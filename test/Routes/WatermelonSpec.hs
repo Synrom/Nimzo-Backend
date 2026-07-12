@@ -191,7 +191,7 @@ spec = describe "Routes.Watermelon" $ do
         KeyMap.lookup "new_cards_today" firstDeck `shouldSatisfy` (/= Nothing)
         KeyMap.lookup "last_study_date" firstDeck `shouldSatisfy` (/= Nothing)
 
-    it "omits card fen and explanation changes for schema version 3" $ do
+    it "omits fen cards and explanation changes for schema version 3" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "pullv3explain" "pullv3explain@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert user
@@ -199,14 +199,17 @@ spec = describe "Routes.Watermelon" $ do
 
         let deck = mkTestUserDeckView "deck_v3_explain" "pullv3explain" "V3 Explain Deck"
         _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
-        let card = (mkTestUserCardView "card_v3_fen" "pullv3explain" "deck_v3_explain" "e2e4")
+        let fenCard = (mkTestUserCardView "card_v3_fen" "pullv3explain" "deck_v3_explain" "e2e4")
               { Repo.fen = Just "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" }
-        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now card
+            plainCard = mkTestUserCardView "card_v3_plain" "pullv3explain" "deck_v3_explain" "d2d4"
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now fenCard
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now plainCard
         let explanation = mkTestUserExplanationView "explanation_v3" "pullv3explain" "deck_v3_explain"
         _ <- runTestApp conn $ UserExplanationView.insertOrUpdate now explanation
 
         value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullv3explain" (PullParams Nothing 3 Nothing))
         firstCard <- expectCreatedUserCardObject value
+        KeyMap.lookup "id" firstCard `shouldBe` Just (String "card_v3_plain")
         KeyMap.lookup "fen" firstCard `shouldBe` Nothing
         let Object root = value
         changesValue <- expectObjectField "changes" root

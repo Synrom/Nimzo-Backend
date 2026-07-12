@@ -56,6 +56,7 @@ withTestDb = bracket mkTestConn close
 cleanTestDb :: Connection -> IO ()
 cleanTestDb conn = do
   _ <- execute_ conn "DELETE FROM android_emails"
+  _ <- execute_ conn "DELETE FROM feedback"
   _ <- execute_ conn "DELETE FROM experiment_events"
   _ <- execute_ conn "DELETE FROM experiment_assignments"
   _ <- execute_ conn "DELETE FROM anonymous_onboarding_progress"
@@ -80,6 +81,7 @@ ensureTestSchema conn = do
     \ created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\
     \)"
   _ <- execute_ conn "CREATE INDEX IF NOT EXISTS android_emails_email_idx ON android_emails(email)"
+  applySqlFile conn "initdb/20_feedback.sql"
   _ <- execute_ conn
     "CREATE TABLE IF NOT EXISTS anonymous_onboarding_progress (\
     \ onboarding_session_id VARCHAR(128) PRIMARY KEY,\

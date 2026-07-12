@@ -28,8 +28,9 @@ import Models.DeckSearch (SearchContinuationsResponse, DeckSearchResult)
 import Models.DeckRating (DeckRatingRequest(..))
 import Models.Watermelon (JsonableMsg)
 import Repo.Deck
-import Models.Card (Card, DeckContentQuery, PagedCards)
+import Models.Card (DeckContentQuery(..), PagedCards)
 import Models.UserExplanationView (PagedExplanations)
+import qualified Routes.Watermelon as Watermelon
 
 type API =
   "deck" :> "search" :> "full" :> QueryParam "query" String :> Get '[JSON] [DeckSearchResult]
@@ -71,9 +72,15 @@ server =
   :<|> Repo.Deck.searchInstant
   :<|> Repo.Deck.listFeatured
   :<|> (Repo.Deck.searchContinuations . fromMaybe "")
-  :<|> Repo.Deck.listCardsOfDeck
+  :<|> listCardsHandler
   :<|> Repo.Deck.listExplanationsOfDeck
   :<|> (\deckId mPrefix -> Repo.Deck.listContinuations deckId (fromMaybe "" mPrefix))
+
+listCardsHandler :: DeckContentQuery -> AppM PagedCards
+listCardsHandler query =
+  Repo.Deck.listCardsOfDeck includeFenCards query
+  where
+    includeFenCards = Watermelon.supportsCardFen $ fromMaybe 3 query.schemaVersion
 
 secureServer :: AuthResult AuthenticatedUser -> SecureServer
 secureServer auth =
