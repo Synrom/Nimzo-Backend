@@ -5,10 +5,9 @@
 
 module Models.Card where
 
-import Data.Aeson (FromJSON (..), ToJSON (..), withObject, (.:), (.:?))
+import Data.Aeson (FromJSON (..), Options (..), ToJSON (..), defaultOptions, genericToEncoding, genericToJSON, withObject, (.:), (.:?))
 import GHC.Generics
-import Database.PostgreSQL.Simple (ToRow, FromRow)
-import Data.Time (UTCTime)
+import Database.PostgreSQL.Simple (FromRow)
 
 data DeckContentQuery = DeckContentQuery
   { cursor :: Maybe String,
@@ -22,7 +21,8 @@ data DeckContentQuery = DeckContentQuery
 data Card  = Card
   { moves :: String,
     title :: String,
-    color :: String
+    color :: String,
+    fen :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
@@ -30,6 +30,7 @@ data PendingCard = PendingCard
   { moves :: String,
     title :: String,
     color :: String,
+    fen :: Maybe String,
     id    :: String
   }
   deriving (Eq, Show, Generic)
@@ -48,7 +49,14 @@ instance FromJSON DeckContentQuery where
       <*> obj .: "deckId"
       <*> obj .:? "prefix"
       <*> obj .:? "schemaVersion"
-instance ToJSON Card
+
+cardJsonOpts :: Options
+cardJsonOpts = defaultOptions { omitNothingFields = True }
+
+instance ToJSON Card where
+  toJSON = genericToJSON cardJsonOpts
+  toEncoding = genericToEncoding cardJsonOpts
+
 instance ToJSON PagedCards
 instance FromRow Card
 instance FromRow PendingCard

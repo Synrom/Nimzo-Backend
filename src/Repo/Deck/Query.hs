@@ -14,7 +14,6 @@ module Repo.Deck.Query
     listContinuations,
     searchContinuations,
     listCardsOfDeck,
-    listExplanationsOfDeck,
     saveRating,
   )
 where
@@ -29,7 +28,6 @@ import Models.Card (Card (..), DeckContentQuery (..), PagedCards (..), PendingCa
 import Models.Deck (Deck (..))
 import Models.DeckDetails (DeckDetails (..))
 import Models.DeckSearch (DeckSearchResult, SearchContinuation (..), SearchContinuationsResponse (..))
-import Models.UserExplanationView (Explanation (..), PagedExplanations (..), PendingExplanation (..))
 import Models.Watermelon (JsonableMsg (Msg))
 
 returnFields :: Query
@@ -159,16 +157,8 @@ paginateCards pendingCards = case safeLast pendingCards of
   Nothing -> PagedCards Nothing cards
   Just card -> PagedCards (Just card.id) cards
   where
-    unpend (PendingCard moves title color _) = Card moves title color
+    unpend (PendingCard moves title color fen _) = Card moves title color fen
     cards = map unpend pendingCards
-
-paginateExplanations :: [PendingExplanation] -> PagedExplanations
-paginateExplanations pendingExplanations = case safeLast pendingExplanations of
-  Nothing -> PagedExplanations Nothing explanations
-  Just explanation -> PagedExplanations (Just explanation.id) explanations
-  where
-    unpend (PendingExplanation fen move text visualizers _) = Explanation fen move text visualizers
-    explanations = map unpend pendingExplanations
 
 buildContinuationQuery :: Query -> Query -> [Action] -> String -> (Query, [Action])
 buildContinuationQuery sourceSql movesExpr baseParams prefix
@@ -287,10 +277,6 @@ movesPrefixCondition :: String -> (Query, [Action])
 movesPrefixCondition prefix =
   (" AND (moves = ? OR moves LIKE ? || ' %')", [toField prefix, toField prefix])
 
-fenPrefixCondition :: String -> (Query, [Action])
-fenPrefixCondition prefix =
-  (" AND (fen = ? OR fen LIKE ? || '%')", [toField prefix, toField prefix])
-
 listContinuations :: MonadDB m => String -> String -> m [String]
 listContinuations userDeckId prefix =
   map fromOnly <$> runQuery sql params
@@ -330,20 +316,11 @@ listCardsOfDeck includeFenCards rawQuery = do
   let (sql, params) = buildDeckContentPageQuery rawQuery deck.user_deck_id baseSql movesPrefixCondition
   paginateCards <$> runQuery sql params
   where
-    fields = " moves, title, color, id "
+    fields = " moves, title, color, fen, id "
     fenFilter
       | includeFenCards = ""
       | otherwise = " AND fen IS NULL"
     baseSql = "SELECT" <> fields <> "FROM user_card_views WHERE user_deck_id=?" <> fenFilter
-
-listExplanationsOfDeck :: MonadDB m => DeckContentQuery -> m PagedExplanations
-listExplanationsOfDeck rawQuery = do
-  deck <- find rawQuery.deckId
-  let (sql, params) = buildDeckContentPageQuery rawQuery deck.user_deck_id baseSql fenPrefixCondition
-  paginateExplanations <$> runQuery sql params
-  where
-    fields = " fen, move, text, visualizers, id "
-    baseSql = "SELECT" <> fields <> "FROM user_explanation_views WHERE user_deck_id=?"
 
 saveRating :: MonadDB m => String -> Integer -> Integer -> m JsonableMsg
 saveRating username deckId ratingValue = do

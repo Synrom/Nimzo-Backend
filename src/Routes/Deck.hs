@@ -29,7 +29,6 @@ import Models.DeckRating (DeckRatingRequest(..))
 import Models.Watermelon (JsonableMsg)
 import Repo.Deck
 import Models.Card (DeckContentQuery(..), PagedCards)
-import Models.UserExplanationView (PagedExplanations)
 import qualified Routes.Watermelon as Watermelon
 
 type API =
@@ -38,7 +37,6 @@ type API =
   :<|> "deck" :> "featured" :> QueryParam "source" String :> QueryParam "limit" Integer :> Get '[JSON] [DeckSearchResult]
   :<|> "deck" :> "search" :> "continuations" :> QueryParam "prefix" String :> QueryParam "color" String :> QueryParam "limitDecks" Integer :> QueryParam "limitContinuations" Integer :> Get '[JSON] SearchContinuationsResponse
   :<|> "deck" :> "cards" :> ReqBody '[JSON] DeckContentQuery :> Post '[JSON] PagedCards
-  :<|> "deck" :> "explanations" :> ReqBody '[JSON] DeckContentQuery :> Post '[JSON] PagedExplanations
   :<|> "deck" :> Capture "user_deck_id" String :> "continuations" :> QueryParam "prefix" String :> Get '[JSON] [String]
 
 type SecureAPI =
@@ -55,7 +53,6 @@ type Server =
   :<|> (Maybe String -> Maybe Integer -> AppM [DeckSearchResult])
   :<|> (Maybe String -> Maybe String -> Maybe Integer -> Maybe Integer -> AppM SearchContinuationsResponse)
   :<|> (DeckContentQuery -> AppM PagedCards)
-  :<|> (DeckContentQuery -> AppM PagedExplanations)
   :<|> (String -> Maybe String -> AppM [String])
 
 type SecureServer =
@@ -73,7 +70,6 @@ server =
   :<|> Repo.Deck.listFeatured
   :<|> (Repo.Deck.searchContinuations . fromMaybe "")
   :<|> listCardsHandler
-  :<|> Repo.Deck.listExplanationsOfDeck
   :<|> (\deckId mPrefix -> Repo.Deck.listContinuations deckId (fromMaybe "" mPrefix))
 
 listCardsHandler :: DeckContentQuery -> AppM PagedCards

@@ -26,6 +26,7 @@ spec = describe "Routes.Deck" $ do
         pagedCards <- expectRight =<< runTestApp conn (Routes.Deck.listCardsHandler cardQuery)
 
         map (.title) (Card.cards pagedCards) `shouldBe` ["Moves card"]
+        map (.fen) (Card.cards pagedCards) `shouldBe` [Nothing]
 
     it "includes fen cards for schemaVersion 4" $ do
       withCleanDb $ \conn -> do
@@ -35,6 +36,7 @@ spec = describe "Routes.Deck" $ do
         pagedCards <- expectRight =<< runTestApp conn (Routes.Deck.listCardsHandler cardQuery)
 
         map (.title) (Card.cards pagedCards) `shouldBe` ["Fen card", "Moves card"]
+        map (.fen) (Card.cards pagedCards) `shouldBe` [Just "8/8/8/8/8/8/8/8 w - - 0 1", Nothing]
 
 seedDeckWithFenAndMovesCards :: Connection -> String -> String -> IO Models.Deck.Deck
 seedDeckWithFenAndMovesCards conn username userDeckId = do

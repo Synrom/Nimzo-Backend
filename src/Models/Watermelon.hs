@@ -9,19 +9,11 @@
 module Models.Watermelon where
 
 import GHC.Generics
-import Data.Text
-import Data.Aeson (ToJSON, FromJSON (..), withObject, (.:), (.:?), (.!=))
-import Database.PostgreSQL.Simple (Connection, SqlError, FromRow)
-import Data.Proxy
-import Data.Int (Int64)
-import Control.Monad (filterM)
-import Servant (Handler)
-import Control.Exception (try)
+import Data.Aeson (FromJSON (..), ToJSON, withObject, (.:))
+import Database.PostgreSQL.Simple (FromRow)
 import Data.Time
-import Data.Maybe
 import Models.UserCardView (UserCardView(..))
 import Models.UserDeckView (UserDeckView(..))
-import Models.UserExplanationView (UserExplanationView(..))
 
 
 data TableChanges a = TableChanges {
@@ -35,8 +27,7 @@ instance FromJSON a => FromJSON (TableChanges a)
 
 data Changes = Changes {
   user_card_views :: TableChanges UserCardView,
-  user_deck_views :: TableChanges UserDeckView,
-  user_explanation_views :: TableChanges UserExplanationView
+  user_deck_views :: TableChanges UserDeckView
 } deriving (Eq, Show, Generic)
 
 instance ToJSON Changes
@@ -44,11 +35,9 @@ instance FromJSON Changes where
   parseJSON = withObject "Changes" $ \obj -> do
     user_card_views <- obj .: "user_card_views"
     user_deck_views <- obj .: "user_deck_views"
-    user_explanation_views <- obj .:? "user_explanation_views" .!= TableChanges [] [] []
     pure $ Changes
       { user_card_views = user_card_views
       , user_deck_views = user_deck_views
-      , user_explanation_views = user_explanation_views
       }
 
 data ChangesResponse = ChangesResponse {
