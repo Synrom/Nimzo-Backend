@@ -27,7 +27,6 @@ import Models.User (User(..))
 import Models.Deck (Deck(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.UserCardView (UserCardView(..))
-import Models.UserExplanationView (UserExplanationView(..))
 import Models.Watermelon (PullParams (..))
 
 -- | Test database connection string
@@ -62,9 +61,7 @@ cleanTestDb conn = do
   _ <- execute_ conn "DELETE FROM anonymous_onboarding_progress"
   _ <- execute_ conn "DELETE FROM user_onboarding_preferences"
   _ <- execute_ conn "DELETE FROM decks"
-  _ <- execute_ conn "DELETE FROM user_explanation_views"
   _ <- execute_ conn "DELETE FROM user_card_views"
-  _ <- execute_ conn "DELETE FROM deleted_explanation_views"
   _ <- execute_ conn "DELETE FROM deleted_ucvs"
   _ <- execute_ conn "DELETE FROM deleted_udvs"
   _ <- execute_ conn "DELETE FROM user_identities"
@@ -127,7 +124,6 @@ ensureTestSchema conn = do
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_card_id VARCHAR(250)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_rank INTEGER"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS video_url VARCHAR(1000)"
-  applySqlFile conn "initdb/18_user_explanation_views.sql"
   applySqlFile conn "initdb/13_featured_deck_lines.sql"
   applySqlFile conn "initdb/14_featured_card_on_decks.sql"
   applySqlFile conn "initdb/07_deck_search_metadata.sql"
@@ -270,18 +266,6 @@ mkTestUserCardView cardId uid deckId mvs = UserCardView
   , Models.UserCardView.title = "Test Card"
   , Models.UserCardView.color = "wh"
   , Models.UserCardView.fen = Nothing
-  }
-
--- | Create a test user explanation view
-mkTestUserExplanationView :: String -> String -> String -> UserExplanationView
-mkTestUserExplanationView explanationId uid deckId = UserExplanationView
-  { Models.UserExplanationView.userDeckId = deckId
-  , Models.UserExplanationView.userId = uid
-  , Models.UserExplanationView.explanationViewId = explanationId
-  , Models.UserExplanationView.fen = "8/8/8/8/8/8/8/8 w - - 0 1"
-  , Models.UserExplanationView.move = "e2e4"
-  , Models.UserExplanationView.text = "Test explanation"
-  , Models.UserExplanationView.visualizers = "{}"
   }
 
 mkTestPullParams :: UTCTime -> PullParams

@@ -52,13 +52,15 @@ Request payload shape (current):
 - `limit` (`number`) requested page size; backend enforces max limit.
 - `deckId` (`number`) target deck id.
 - `prefix` (`string|null`) optional move-prefix filter.
+- `schemaVersion` (`number|null`) optional; schema version `4` and newer includes FEN-backed cards.
 
-Response payload shape (current, unchanged):
+Response payload shape:
 - `next_cursor` (`string|null`)
 - `cards` (`array`) with per-card fields:
   - `moves`
   - `title`
   - `color`
+  - `fen` only when present and `schemaVersion >= 4`
 
 Important: `/deck/cards` does **not** add featured metadata in this simplified rollout.
 - No `isFeatured` boolean.
@@ -68,4 +70,4 @@ Important: `/deck/cards` does **not** add featured metadata in this simplified r
 ## Important compatibility note
 
 - No `/changes/push` or `/changes/pull` behavior is changed by this feature.
-- `/deck/cards` response shape stays exactly as before.
+- `/deck/cards` does not add featured metadata. Separately, schema version `4` clients can receive `fen` on returned cards.
