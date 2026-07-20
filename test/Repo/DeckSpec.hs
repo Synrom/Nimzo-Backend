@@ -798,7 +798,7 @@ spec = describe "Repo.Deck" $ do
         _ <- runTestApp conn $ Repo.User.insert user
         _ <- runTestApp conn $ do
           _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
-            ("udv_fen_browser" :: String, "fenbrowser" :: String, "FEN Browser" :: String, True, 5 :: Integer)
+            ("udv_fen_browser" :: String, "fenbrowser" :: String, "FEN Browser" :: String, True, 6 :: Integer)
           pure ()
         deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "FEN Browser" "fenbrowser" "udv_fen_browser"))
         _ <- runTestApp conn $ do
@@ -811,16 +811,18 @@ spec = describe "Repo.Deck" $ do
           _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             ("fen_browser_4" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "Kf3" :: String, "FEN B" :: String, "wh" :: String, fenB, 0 :: Integer)
           _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-            ("fen_browser_5" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "c4 c5" :: String, "Explicit standard FEN" :: String, "wh" :: String, Just ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" :: String), 0 :: Integer)
+            ("fen_browser_5" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "c4 c5" :: String, "Explicit standard FEN" :: String, "wh" :: String, Just ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 37 80" :: String), 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ("fen_browser_6" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "a4 a5" :: String, "Same pieces, black to move" :: String, "wh" :: String, Just ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1" :: String), 0 :: Integer)
           pure ()
 
         fromDefault <- expectRight =<< runTestApp conn
           (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) Nothing Nothing))
-        map (.title) (cards fromDefault) `shouldBe` ["Matching default", "FEN A", "FEN B"]
+        map (.title) (cards fromDefault) `shouldBe` ["Matching default", "FEN A", "FEN B", "Same pieces, black to move"]
 
         fromFenA <- expectRight =<< runTestApp conn
           (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) (Just fenA) Nothing))
-        map (.title) (cards fromFenA) `shouldBe` ["Matching default", "FEN B"]
+        map (.title) (cards fromFenA) `shouldBe` ["Matching default", "FEN B", "Same pieces, black to move"]
 
   describe "listContinuations" $ do
     it "returns distinct next moves for a single deck prefix" $ do
@@ -853,7 +855,7 @@ spec = describe "Repo.Deck" $ do
             ( "udv_cont_fen_card_fen" :: String
             , "contfenuser" :: String
             , "udv_cont_fen" :: String
-            , "e4 e6" :: String
+            , "e4 a6" :: String
             , "Fen continuation" :: String
             , "wh" :: String
             , Just ("8/8/8/8/8/8/8/8 w - - 0 1" :: String)
@@ -866,7 +868,7 @@ spec = describe "Repo.Deck" $ do
             , "e4 e6" :: String
             , "Explicit standard FEN" :: String
             , "wh" :: String
-            , Just ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" :: String)
+            , Just ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 37 80" :: String)
             , 0 :: Integer
             )
           return ()
@@ -888,13 +890,15 @@ spec = describe "Repo.Deck" $ do
             ("selected_fen_1" :: String, "contselectedfen" :: String, "udv_cont_selected_fen" :: String, "Kh3 Kg2" :: String, "Selected one" :: String, "wh" :: String, selectedFen, 0 :: Integer)
           _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             ("selected_fen_2" :: String, "contselectedfen" :: String, "udv_cont_selected_fen" :: String, "Kf3" :: String, "Other FEN" :: String, "wh" :: String, Just ("8/8/8/8/8/8/6K1/7k w - - 0 1" :: String), 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ("selected_fen_3" :: String, "contselectedfen" :: String, "udv_cont_selected_fen" :: String, "Kh3 Kf2" :: String, "Selected counters" :: String, "wh" :: String, Just ("8/8/8/8/8/8/7K/6k1 w - - 42 99" :: String), 0 :: Integer)
           pure ()
 
         root <- expectRight =<< runTestApp conn (Repo.Deck.listContinuations "udv_cont_selected_fen" (Just selectedFen) "")
         afterKh3 <- expectRight =<< runTestApp conn (Repo.Deck.listContinuations "udv_cont_selected_fen" (Just selectedFen) "Kh3")
 
         root `shouldBe` ["Kh3"]
-        afterKh3 `shouldBe` ["Kg2"]
+        afterKh3 `shouldBe` ["Kf2", "Kg2"]
 
   describe "searchContinuations" $ do
     it "returns continuations and deck counts for public decks only" $ do

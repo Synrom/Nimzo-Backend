@@ -280,27 +280,37 @@ movesPrefixCondition rawStartingFen prefix =
   )
   where
     startingFen = normalizeStartingFen rawStartingFen
-    customFenSql = "(fen IS NOT NULL AND fen <> '' AND split_part(fen, ' ', 1) <> ?)"
+    positionMatchSql = "(fen = ? OR fen LIKE ? || ' %')"
+    positionMatchParams fen = [toField fen, toField fen]
+    customFenSql = "(fen IS NOT NULL AND fen <> '' AND NOT " <> positionMatchSql <> ")"
     (differentFenSql, differentFenParams) = case startingFen of
-      Nothing -> (customFenSql, [toField startingPiecePlacement])
-      Just fen -> ("(" <> customFenSql <> " AND fen <> ?)", [toField startingPiecePlacement, toField fen])
+      Nothing -> (customFenSql, positionMatchParams startingPositionKey)
+      Just fen -> ("(" <> customFenSql <> " AND NOT " <> positionMatchSql <> ")", positionMatchParams startingPositionKey <> positionMatchParams fen)
 
-startingPiecePlacement :: String
-startingPiecePlacement = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+startingPositionKey :: String
+startingPositionKey = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
+
+fenPositionKey :: String -> String
+fenPositionKey = unwords . take 4 . words
 
 normalizeStartingFen :: Maybe String -> Maybe String
 normalizeStartingFen (Just fen)
-  | takeWhile (/= ' ') fen == startingPiecePlacement = Nothing
-normalizeStartingFen fen = fen
+  | positionKey == startingPositionKey = Nothing
+  | otherwise = Just positionKey
+  where
+    positionKey = fenPositionKey fen
+normalizeStartingFen Nothing = Nothing
 
 listContinuations :: MonadDB m => String -> Maybe String -> String -> m [String]
 listContinuations userDeckId rawStartingFen prefix =
   map fromOnly <$> runQuery sql params
   where
     startingFen = normalizeStartingFen rawStartingFen
+    positionMatchSql = "(fen = ? OR fen LIKE ? || ' %')"
+    positionMatchParams fen = [toField fen, toField fen]
     (fenSql, fenParams) = case startingFen of
-      Nothing -> ("(fen IS NULL OR fen = '' OR split_part(fen, ' ', 1) = ?)", [toField startingPiecePlacement])
-      Just fen -> ("fen = ?", [toField fen])
+      Nothing -> ("(fen IS NULL OR fen = '' OR " <> positionMatchSql <> ")", positionMatchParams startingPositionKey)
+      Just fen -> (positionMatchSql, positionMatchParams fen)
     (sql, params) =
       buildContinuationQuery
         ("FROM user_card_views WHERE user_deck_id = ? AND " <> fenSql)
