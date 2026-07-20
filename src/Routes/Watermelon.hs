@@ -76,7 +76,7 @@ mkTableChangesValue rowToValue changes = object
 -- v2 adds user_deck_views.color.
 -- v3 adds user_deck_views study fields.
 -- v4 adds user_card_views.fen; older clients neither receive fen-backed cards nor the fen field.
--- There is intentionally no v5 backend behavior.
+-- v5 adds user_card_views.likelihood.
 supportsDeckColor :: Integer -> Bool
 supportsDeckColor schemaVersion = schemaVersion >= 2
 
@@ -86,6 +86,9 @@ supportsDeckStudyFields schemaVersion = schemaVersion >= 3
 supportsCardFen :: Integer -> Bool
 supportsCardFen schemaVersion = schemaVersion >= 4
 
+supportsCardLikelihood :: Integer -> Bool
+supportsCardLikelihood schemaVersion = schemaVersion >= 5
+
 deckViewForSchema :: Integer -> UserDeckView -> Value
 deckViewForSchema schemaVersion
   | supportsDeckStudyFields schemaVersion = toJSON
@@ -94,7 +97,8 @@ deckViewForSchema schemaVersion
 
 cardViewForSchema :: Integer -> UserCardView -> Value
 cardViewForSchema schemaVersion
-  | supportsCardFen schemaVersion = toJSON
+  | supportsCardLikelihood schemaVersion = schemaV5UserCardView
+  | supportsCardFen schemaVersion = schemaV4UserCardView
   | otherwise = legacyUserCardView
 
 cardChangesForSchema :: Integer -> TableChanges UserCardView -> TableChanges UserCardView
@@ -179,6 +183,32 @@ legacyUserCardView card = object
   , "title" .= card.title
   , "color" .= card.color
   ]
+
+schemaV4UserCardView :: UserCardView -> Value
+schemaV4UserCardView card = object
+  [ "num_correct_trials" .= card.numCorrectTrials
+  , "next_request_at" .= card.nextRequest
+  , "user_id" .= card.userId
+  , "user_deck_id" .= card.userDeckId
+  , "id" .= card.ucvId
+  , "moves" .= card.moves
+  , "title" .= card.title
+  , "color" .= card.color
+  , "fen" .= card.fen
+  ]
+
+schemaV5UserCardView :: UserCardView -> Value
+schemaV5UserCardView card = object $
+  [ "num_correct_trials" .= card.numCorrectTrials
+  , "next_request_at" .= card.nextRequest
+  , "user_id" .= card.userId
+  , "user_deck_id" .= card.userDeckId
+  , "id" .= card.ucvId
+  , "moves" .= card.moves
+  , "title" .= card.title
+  , "color" .= card.color
+  , "fen" .= card.fen
+  ] ++ maybe [] (\likelihood -> ["likelihood" .= likelihood]) card.likelihood
 
 pullRouteVersioned :: String -> PullParams -> AppM Value
 pullRouteVersioned username params = do

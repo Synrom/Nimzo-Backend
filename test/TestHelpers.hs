@@ -118,6 +118,7 @@ ensureTestSchema conn = do
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS new_cards_today INTEGER NOT NULL DEFAULT 0"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS last_study_date VARCHAR(10) NOT NULL DEFAULT ''"
   _ <- execute_ conn "ALTER TABLE user_card_views ADD COLUMN IF NOT EXISTS fen VARCHAR(92)"
+  applySqlFile conn "initdb/22_user_card_view_likelihood.sql"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS image_url VARCHAR(600)"
   _ <- execute_ conn "ALTER TABLE decks ADD COLUMN IF NOT EXISTS featured_source VARCHAR(50)"
@@ -265,6 +266,7 @@ mkTestUserCardView cardId uid deckId mvs = UserCardView
   , Models.UserCardView.title = "Test Card"
   , Models.UserCardView.color = "wh"
   , Models.UserCardView.fen = Nothing
+  , Models.UserCardView.likelihood = Nothing
   }
 
 mkTestPullParams :: UTCTime -> PullParams

@@ -627,7 +627,7 @@ spec = describe "Repo.Deck" $ do
         let featuredCardMoves = (head selected).featuredCardMoves
         featuredCardMoves `shouldBe` Just "d4 d5"
 
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing))
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True False (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing))
         pure ()
 
     it "returns empty list when deck has no cards" $ do
@@ -644,7 +644,7 @@ spec = describe "Repo.Deck" $ do
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
         let query = DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing Nothing Nothing Nothing
-        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
+        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True False query
         pagedCards <- expectRight result
 
         cards pagedCards `shouldBe` []
@@ -670,7 +670,7 @@ spec = describe "Repo.Deck" $ do
             [1..5 :: Int]
 
         let query = DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing Nothing Nothing Nothing
-        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
+        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True False query
         pagedCards <- expectRight result
 
         length (cards pagedCards) `shouldBe` 3
@@ -690,7 +690,7 @@ spec = describe "Repo.Deck" $ do
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
         let query = DeckContentQuery Nothing 1000 (Models.Deck.deckId inserted) Nothing Nothing Nothing Nothing
-        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
+        result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True False query
 
         -- Should not fail, just limit to 100
         _ <- expectRight result
@@ -718,12 +718,12 @@ spec = describe "Repo.Deck" $ do
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
         let browserQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True browserQuery)
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True False browserQuery)
         afterBrowserRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
         fromOnly (head afterBrowserRows) `shouldBe` fromOnly (head beforeRows)
 
         let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing (Just True)
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True cardQuery)
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True False cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
@@ -732,12 +732,12 @@ spec = describe "Repo.Deck" $ do
         afterCount `shouldBe` (beforeCount + 1)
 
         let legacyDownloadQuery = DeckContentQuery Nothing 100 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True legacyDownloadQuery)
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True False legacyDownloadQuery)
         afterLegacyRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
         fromOnly (head afterLegacyRows) `shouldBe` (beforeCount + 2)
 
         let optedOutQuery = DeckContentQuery Nothing 100 (Models.Deck.deckId deck) Nothing Nothing Nothing (Just False)
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True optedOutQuery)
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True False optedOutQuery)
         afterOptOutRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
         fromOnly (head afterOptOutRows) `shouldBe` (beforeCount + 2)
 
@@ -761,7 +761,7 @@ spec = describe "Repo.Deck" $ do
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
         let cardQuery = DeckContentQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing Nothing Nothing (Just True)
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True cardQuery)
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True False cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
@@ -785,7 +785,7 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
         _ <- expectRight =<< runTestApp conn
-          (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) Nothing (Just True)))
+          (Repo.Deck.listCardsOfDeck True False (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) Nothing (Just True)))
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
         fromOnly (head afterRows) `shouldBe` fromOnly (head beforeRows)
@@ -817,11 +817,11 @@ spec = describe "Repo.Deck" $ do
           pure ()
 
         fromDefault <- expectRight =<< runTestApp conn
-          (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) Nothing Nothing))
+          (Repo.Deck.listCardsOfDeck True False (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) Nothing Nothing))
         map (.title) (cards fromDefault) `shouldBe` ["Matching default", "FEN A", "FEN B", "Same pieces, black to move"]
 
         fromFenA <- expectRight =<< runTestApp conn
-          (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) (Just fenA) Nothing))
+          (Repo.Deck.listCardsOfDeck True False (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) (Just fenA) Nothing))
         map (.title) (cards fromFenA) `shouldBe` ["Matching default", "FEN B", "Same pieces, black to move"]
 
   describe "listContinuations" $ do

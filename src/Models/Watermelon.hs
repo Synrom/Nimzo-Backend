@@ -9,7 +9,7 @@
 module Models.Watermelon where
 
 import GHC.Generics
-import Data.Aeson (FromJSON (..), ToJSON, withObject, (.:))
+import Data.Aeson (FromJSON (..), ToJSON, withObject, (.:), (.:?), (.!=))
 import Database.PostgreSQL.Simple (FromRow)
 import Data.Time
 import Models.UserCardView (UserCardView(..))
@@ -73,10 +73,22 @@ instance FromJSON PullParams
 
 data PushParams = PushParams {
   lastPulledAt :: Integer,
+  schemaVersion :: Integer,
   changes :: Changes
 } deriving (Eq, Show, Generic)
 
-instance FromJSON PushParams
+instance FromJSON PushParams where
+  parseJSON = withObject "PushParams" $ \obj -> do
+    lastPulledAt <- obj .: "lastPulledAt"
+    -- Pushes predate an explicit schema version. Treat those payloads as v4,
+    -- the last schema before likelihood, so they remain valid unchanged.
+    schemaVersion <- obj .:? "schemaVersion" .!= 4
+    changes <- obj .: "changes"
+    pure $ PushParams
+      { lastPulledAt = lastPulledAt
+      , schemaVersion = schemaVersion
+      , changes = changes
+      }
 
 data Success = Success {
   xp :: Integer,

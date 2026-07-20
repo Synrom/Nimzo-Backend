@@ -20,7 +20,8 @@ data UserCardView = UserCardView
     moves :: String,
     title :: String,
     color :: String,
-    fen :: Maybe String
+    fen :: Maybe String,
+    likelihood :: Maybe Double
   }
   deriving (Eq, Show, Generic)
 

@@ -15,7 +15,7 @@ import Repo.Utils (notNull, one, orMinTime, removePrefix)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 
 returnFields :: Query
-returnFields = " num_correct_trials, next_request, user_id, user_deck_id, id, moves, title, color, fen "
+returnFields = " num_correct_trials, next_request, user_id, user_deck_id, id, moves, title, color, fen, likelihood "
 
 markString :: String -> String -> String
 markString username id = username ++ id
@@ -76,15 +76,15 @@ find id = one =<< runQuery query (Only id)
 
 
 insertOrUpdate :: MonadDB m => UTCTime -> UserCardView -> m UserCardView
-insertOrUpdate time unmarked = one =<< runQuery query (card.ucvId , card.userDeckId, card.numCorrectTrials, card.nextRequest, card.moves, card.title, card.color, card.fen, card.userId, time, time)
+insertOrUpdate time unmarked = one =<< runQuery query (card.ucvId , card.userDeckId, card.numCorrectTrials, card.nextRequest, card.moves, card.title, card.color, card.fen, card.likelihood, card.userId, time, time, card.likelihood)
   where
     query :: Query
     query = "INSERT INTO user_card_views \
     \(id, user_deck_id, \
     \num_correct_trials, next_request, \
-    \ moves, title, color, fen, user_id, \
+    \ moves, title, color, fen, likelihood, user_id, \
     \ last_modified, created_at) \
-    \VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) \
+    \VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) \
     \DO UPDATE SET \
     \user_deck_id = EXCLUDED.user_deck_id \
     \, user_id = EXCLUDED.user_id \
@@ -93,6 +93,7 @@ insertOrUpdate time unmarked = one =<< runQuery query (card.ucvId , card.userDec
     \, title = EXCLUDED.title \
     \, color = EXCLUDED.color \
     \, fen = EXCLUDED.fen \
+    \, likelihood = COALESCE(?, user_card_views.likelihood) \
     \, next_request = EXCLUDED.next_request \
     \, last_modified = EXCLUDED.last_modified \
     \RETURNING" <> returnFields

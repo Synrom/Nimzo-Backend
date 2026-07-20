@@ -152,12 +152,13 @@ alreadyExists deck = do
     query :: Query
     query = "SELECT" <> returnFields <> "FROM decks WHERE user_deck_id LIKE ?"
 
-paginateCards :: [PendingCard] -> PagedCards
-paginateCards pendingCards = case safeLast pendingCards of
+paginateCards :: Bool -> [PendingCard] -> PagedCards
+paginateCards includeLikelihood pendingCards = case safeLast pendingCards of
   Nothing -> PagedCards Nothing cards
   Just card -> PagedCards (Just card.id) cards
   where
-    unpend (PendingCard moves title color fen _) = Card moves title color fen
+    unpend (PendingCard moves title color fen likelihood _) =
+      Card moves title color fen (if includeLikelihood then likelihood else Nothing)
     cards = map unpend pendingCards
 
 buildContinuationQuery :: Query -> Query -> [Action] -> String -> (Query, [Action])
@@ -334,8 +335,8 @@ searchContinuations prefix mColor mDeckLimit mContinuationLimit =
         mContinuationLimit
     (decksSql, decksParams) = buildDecksQuery prefix mColor mDeckLimit
 
-listCardsOfDeck :: MonadDB m => Bool -> DeckContentQuery -> m PagedCards
-listCardsOfDeck includeFenCards rawQuery = do
+listCardsOfDeck :: MonadDB m => Bool -> Bool -> DeckContentQuery -> m PagedCards
+listCardsOfDeck includeFenCards includeLikelihood rawQuery = do
   let pageQuery = clampDeckContentQuery rawQuery
   deck <- find pageQuery.deckId
   if shouldIncrementDownloadCount
@@ -344,7 +345,7 @@ listCardsOfDeck includeFenCards rawQuery = do
       pure ()
     else pure ()
   let (sql, params) = buildDeckContentPageQuery rawQuery deck.user_deck_id baseSql (movesPrefixCondition rawQuery.startingFen)
-  paginateCards <$> runQuery sql params
+  paginateCards includeLikelihood <$> runQuery sql params
   where
     -- Released clients before isDownload was added always used a full 100-card
     -- root page for downloads; their deck browser uses a 10-card page. Keep
@@ -354,7 +355,7 @@ listCardsOfDeck includeFenCards rawQuery = do
       rawQuery.cursor == Nothing
         && rawQuery.prefix == Nothing
         && (rawQuery.isDownload == Just True || isLegacyDownload)
-    fields = " moves, title, color, fen, id "
+    fields = " moves, title, color, fen, likelihood, id "
     fenFilter
       | includeFenCards = ""
       | otherwise = " AND fen IS NULL"

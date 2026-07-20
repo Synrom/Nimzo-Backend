@@ -220,12 +220,47 @@ spec = describe "Routes.Watermelon" $ do
         _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
         let fenValue = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
             card = (mkTestUserCardView "card_v4_fen" "pullv4fen" "deck_v4_fen" "e2e4")
-              { Repo.fen = Just fenValue }
+              { Repo.fen = Just fenValue
+              , Repo.likelihood = Just 0.25
+              }
         _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now card
 
         value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullv4fen" (PullParams Nothing 4 Nothing))
         firstCard <- expectCreatedUserCardObject value
         KeyMap.lookup "fen" firstCard `shouldBe` Just (String (fromString fenValue))
+        KeyMap.lookup "likelihood" firstCard `shouldBe` Nothing
+
+    it "includes card likelihood for schema version 5" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pullv5likelihood" "pullv5likelihood@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        now <- getCurrentTime
+
+        let deck = mkTestUserDeckView "deck_v5_likelihood" "pullv5likelihood" "V5 Likelihood Deck"
+            card = (mkTestUserCardView "card_v5_likelihood" "pullv5likelihood" "deck_v5_likelihood" "e2e4")
+              { Repo.likelihood = Just 0.625 }
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now card
+
+        value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullv5likelihood" (PullParams Nothing 5 Nothing))
+        firstCard <- expectCreatedUserCardObject value
+        KeyMap.lookup "likelihood" firstCard `shouldBe` Just (Number 0.625)
+
+    it "omits unset card likelihood for schema version 5" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pullv5optional" "pullv5optional@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        now <- getCurrentTime
+
+        let deck = mkTestUserDeckView "deck_v5_optional" "pullv5optional" "V5 Optional Deck"
+            card = mkTestUserCardView "card_v5_optional" "pullv5optional" "deck_v5_optional" "d2d4"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate now deck
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate now card
+
+        value <- expectRight =<< runTestApp conn (Routes.Watermelon.pullRouteVersioned "pullv5optional" (PullParams Nothing 5 Nothing))
+        firstCard <- expectCreatedUserCardObject value
+        KeyMap.lookup "fen" firstCard `shouldBe` Just Null
+        KeyMap.lookup "likelihood" firstCard `shouldBe` Nothing
 
   describe "pushRoute" $ do
     it "successfully pushes new user deck views" $ do
@@ -239,7 +274,7 @@ spec = describe "Routes.Watermelon" $ do
         let newDeck = mkTestUserDeckView "push_deck1" "pushuser" "Pushed Deck"
         let tableChanges = TableChanges [newDeck] [] []
         let changeSet = Changes { user_card_views = TableChanges [] [] [], user_deck_views = tableChanges }
-        let pushParams = PushParams lastPulled changeSet
+        let pushParams = PushParams lastPulled 4 changeSet
 
         let authUser = AUser "pushuser" False now
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -267,7 +302,7 @@ spec = describe "Routes.Watermelon" $ do
         let newCard = mkTestUserCardView "card1" "pushuser2" "deck_for_cards" "e2e4 e7e5"
         let cardChanges = TableChanges [newCard] [] []
         let changeSet = Changes { user_card_views = cardChanges, user_deck_views = TableChanges [] [] [] }
-        let pushParams = PushParams lastPulled changeSet
+        let pushParams = PushParams lastPulled 4 changeSet
 
         let authUser = AUser "pushuser2" False now
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -279,6 +314,48 @@ spec = describe "Routes.Watermelon" $ do
         cards <- runTestApp conn $ Repo.UserCardView.createdSince "pushuser2" Nothing
         created <- expectRight cards
         length created `shouldBe` 1
+
+    it "accepts and stores likelihood for schema version 5" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pushv5likelihood" "pushv5likelihood@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        let deck = mkTestUserDeckView "deck_push_v5" "pushv5likelihood" "V5 Card Deck"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate minTime deck
+
+        now <- getCurrentTime
+        let lastPulled = floor $ utcTimeToPOSIXSeconds now - 10
+            newCard = (mkTestUserCardView "card_v5" "pushv5likelihood" "deck_push_v5" "e2e4 e7e5")
+              { Repo.likelihood = Just 0.75 }
+            cardChanges = TableChanges [newCard] [] []
+            changeSet = Changes { user_card_views = cardChanges, user_deck_views = TableChanges [] [] [] }
+            pushParams = PushParams lastPulled 5 changeSet
+            authUser = AUser "pushv5likelihood" False now
+
+        success <- expectRight =<< runTestApp conn (Routes.Watermelon.pushRoute authUser pushParams)
+        success.msg `shouldBe` "Synched successfully."
+        [storedCard] <- expectRight =<< runTestApp conn (Repo.UserCardView.createdSince "pushv5likelihood" Nothing)
+        storedCard.likelihood `shouldBe` Just 0.75
+
+    it "accepts missing likelihood for card changes in schema version 5" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "pushv5missing" "pushv5missing@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        let deck = mkTestUserDeckView "deck_push_v5_missing" "pushv5missing" "V5 Missing Deck"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate minTime deck
+
+        now <- getCurrentTime
+        let lastPulled = floor $ utcTimeToPOSIXSeconds now - 10
+            newCard = mkTestUserCardView "card_v5_missing" "pushv5missing" "deck_push_v5_missing" "e2e4"
+            changeSet = Changes
+              { user_card_views = TableChanges [newCard] [] []
+              , user_deck_views = TableChanges [] [] []
+              }
+            authUser = AUser "pushv5missing" False now
+
+        success <- expectRight =<< runTestApp conn (Routes.Watermelon.pushRoute authUser (PushParams lastPulled 5 changeSet))
+        success.msg `shouldBe` "Synched successfully."
+        [storedCard] <- expectRight =<< runTestApp conn (Repo.UserCardView.createdSince "pushv5missing" Nothing)
+        storedCard.likelihood `shouldBe` Nothing
 
     it "rejects user card fen longer than 92 characters" $ do
       withCleanDb $ \conn -> do
@@ -295,7 +372,7 @@ spec = describe "Routes.Watermelon" $ do
               { Repo.fen = Just longFen }
             cardChanges = TableChanges [newCard] [] []
             changeSet = Changes { user_card_views = cardChanges, user_deck_views = TableChanges [] [] [] }
-            pushParams = PushParams lastPulled changeSet
+            pushParams = PushParams lastPulled 4 changeSet
             authUser = AUser "pushfenlong" False now
 
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -307,10 +384,41 @@ spec = describe "Routes.Watermelon" $ do
     it "decodes older push payloads without card fen" $ do
       let payload = "{\"lastPulledAt\":1,\"changes\":{\"user_card_views\":{\"created\":[{\"num_correct_trials\":0,\"next_request_at\":0,\"user_id\":\"legacyuser\",\"user_deck_id\":\"legacydeck\",\"id\":\"legacycard\",\"moves\":\"e2e4\",\"title\":\"Legacy Card\",\"color\":\"wh\"}],\"updated\":[],\"deleted\":[]},\"user_deck_views\":{\"created\":[],\"updated\":[],\"deleted\":[]}}}"
       case Aeson.eitherDecode payload of
-        Right (PushParams _ changes) -> do
+        Right (PushParams _ schemaVersion changes) -> do
+          schemaVersion `shouldBe` 4
           length changes.user_card_views.created `shouldBe` 1
           (head changes.user_card_views.created).fen `shouldBe` Nothing
+          (head changes.user_card_views.created).likelihood `shouldBe` Nothing
         Left err -> expectationFailure err
+
+    it "preserves likelihood when a schema version 4 client updates without it" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "compatlikelihood" "compatlikelihood@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        now <- getCurrentTime
+        let originalCreatedAt = intToTime $ floor (utcTimeToPOSIXSeconds now) - 20
+            lastPulled = floor $ utcTimeToPOSIXSeconds now - 10
+            deck = mkTestUserDeckView "deck_compat_likelihood" "compatlikelihood" "Compatibility Deck"
+            originalCard = (mkTestUserCardView "card_compat_likelihood" "compatlikelihood" "deck_compat_likelihood" "e2e4")
+              { Repo.likelihood = Just 0.9 }
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate originalCreatedAt deck
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate originalCreatedAt originalCard
+
+        let legacyUpdate = originalCard
+              { Repo.title = "Updated by v4"
+              , Repo.likelihood = Nothing
+              }
+            changeSet = Changes
+              { user_card_views = TableChanges [] [legacyUpdate] []
+              , user_deck_views = TableChanges [] [] []
+              }
+            authUser = AUser "compatlikelihood" False now
+        success <- expectRight =<< runTestApp conn (Routes.Watermelon.pushRoute authUser (PushParams lastPulled 4 changeSet))
+        success.msg `shouldBe` "Synched successfully."
+
+        [storedCard] <- expectRight =<< runTestApp conn (Repo.UserCardView.createdSince "compatlikelihood" Nothing)
+        storedCard.title `shouldBe` "Updated by v4"
+        storedCard.likelihood `shouldBe` Just 0.9
 
     it "updates existing items" $ do
       withCleanDb $ \conn -> do
@@ -329,7 +437,7 @@ spec = describe "Routes.Watermelon" $ do
               { numCardsTotal = 10 }
         let tableChanges = TableChanges [] [updatedDeck] []
         let changeSet = Changes { user_card_views = TableChanges [] [] [], user_deck_views = tableChanges }
-        let pushParams = PushParams lastPulled changeSet
+        let pushParams = PushParams lastPulled 4 changeSet
 
         let authUser = AUser "updateuser" False now
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -377,7 +485,7 @@ spec = describe "Routes.Watermelon" $ do
               , Models.color = Nothing
               }
         let changeSet = Changes { user_card_views = TableChanges [] [] [], user_deck_views = TableChanges [] [updatedDeck] [] }
-        let pushParams = PushParams lastPulled changeSet
+        let pushParams = PushParams lastPulled 4 changeSet
         let authUser = AUser "compatuser" False now
 
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -409,7 +517,7 @@ spec = describe "Routes.Watermelon" $ do
         let deckChanges = TableChanges [] [] ["delete_deck"]
         let cardChanges = TableChanges [] [] []
         let changeSet = Changes { user_card_views = cardChanges, user_deck_views = deckChanges }
-        let pushParams = PushParams deletedAt changeSet
+        let pushParams = PushParams deletedAt 4 changeSet
 
         let authUser = AUser "deleteuser" False now
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -445,7 +553,7 @@ spec = describe "Routes.Watermelon" $ do
         let deckChanges = TableChanges [] [] ["delete_deck"]
         let cardChanges = TableChanges [] [] ["card1"]
         let changeSet = Changes { user_card_views = cardChanges, user_deck_views = deckChanges }
-        let pushParams = PushParams deletedAt changeSet
+        let pushParams = PushParams deletedAt 4 changeSet
         let authUser = AUser "deleteuser" False now
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
         success <- expectRight result
@@ -476,7 +584,7 @@ spec = describe "Routes.Watermelon" $ do
               , user_deck_views = TableChanges [] [] ["same_deck_id"]
               }
         let authUser = AUser "recreatedeck" False now
-        deleteResult <- runTestApp conn $ Routes.Watermelon.pushRoute authUser (PushParams deletedAt deleteChanges)
+        deleteResult <- runTestApp conn $ Routes.Watermelon.pushRoute authUser (PushParams deletedAt 4 deleteChanges)
         _ <- expectRight deleteResult
 
         let recreatedDeck = mkTestUserDeckView "same_deck_id" "recreatedeck" "Recreated Deck"
@@ -484,7 +592,7 @@ spec = describe "Routes.Watermelon" $ do
               { user_card_views = TableChanges [] [] []
               , user_deck_views = TableChanges [recreatedDeck] [] []
               }
-        recreateResult <- runTestApp conn $ Routes.Watermelon.pushRoute authUser (PushParams deletedAt recreateChanges)
+        recreateResult <- runTestApp conn $ Routes.Watermelon.pushRoute authUser (PushParams deletedAt 4 recreateChanges)
         recreateErr <- expectLeft recreateResult
         case recreateErr of
           Internal msg -> msg `shouldBe` "{\"msg\":\"Cannot recreate a deleted deck id.\"}"
@@ -508,7 +616,7 @@ spec = describe "Routes.Watermelon" $ do
         let deckChanges = TableChanges [] [] ["missing_deck"]
         let cardChanges = TableChanges [] [] ["missing_card"]
         let changeSet = Changes { user_card_views = cardChanges, user_deck_views = deckChanges }
-        let pushParams = PushParams deletedAt changeSet
+        let pushParams = PushParams deletedAt 4 changeSet
         let authUser = AUser "missingdelete" False now
 
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -535,7 +643,7 @@ spec = describe "Routes.Watermelon" $ do
         let someoneDeck = mkTestUserDeckView "deck_other" "user2" "Not My Deck"
         let tableChanges = TableChanges [someoneDeck] [] []
         let changeSet = Changes { user_card_views = TableChanges [] [] [], user_deck_views = tableChanges }
-        let pushParams = PushParams lastPulled changeSet
+        let pushParams = PushParams lastPulled 4 changeSet
 
         let authUser = AUser "user1" False now
         result <- runTestApp conn $ Routes.Watermelon.pushRoute authUser pushParams
@@ -558,7 +666,7 @@ spec = describe "Routes.Watermelon" $ do
         let updatedDeck = mkTestUserDeckView "deck_conflict" "conflictuser" "My Update"
         let tableChanges = TableChanges [] [updatedDeck] []
         let changeSet = Changes { user_card_views = TableChanges [] [] [], user_deck_views = tableChanges }
-        let pushParams = PushParams beforeCreation changeSet
+        let pushParams = PushParams beforeCreation 4 changeSet
 
         now <- getCurrentTime
         let authUser = AUser "conflictuser" False now

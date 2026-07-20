@@ -24,7 +24,8 @@ data Card  = Card
   { moves :: String,
     title :: String,
     color :: String,
-    fen :: Maybe String
+    fen :: Maybe String,
+    likelihood :: Maybe Double
   }
   deriving (Eq, Show, Generic)
 
@@ -33,6 +34,7 @@ data PendingCard = PendingCard
     title :: String,
     color :: String,
     fen :: Maybe String,
+    likelihood :: Maybe Double,
     id    :: String
   }
   deriving (Eq, Show, Generic)

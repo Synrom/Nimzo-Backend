@@ -42,6 +42,17 @@ spec = describe "Routes.Deck" $ do
 
         map (.title) (Card.cards pagedCards) `shouldBe` ["Fen card", "Moves card"]
         map (.fen) (Card.cards pagedCards) `shouldBe` [Just "8/8/8/8/8/8/8/8 w - - 0 1", Nothing]
+        map (.likelihood) (Card.cards pagedCards) `shouldBe` [Nothing, Nothing]
+
+    it "includes likelihood for schemaVersion 5" $ do
+      withCleanDb $ \conn -> do
+        deck <- seedDeckWithFenAndMovesCards conn "deckcardsv5" "udv_deck_cards_v5"
+
+        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing (Just 5) Nothing Nothing
+        pagedCards <- expectRight =<< runTestApp conn (Routes.Deck.listCardsHandler cardQuery)
+
+        map (.title) (Card.cards pagedCards) `shouldBe` ["Fen card", "Moves card"]
+        map (.likelihood) (Card.cards pagedCards) `shouldBe` [Just 0.8, Nothing]
 
 seedDeckWithFenAndMovesCards :: Connection -> String -> String -> IO Models.Deck.Deck
 seedDeckWithFenAndMovesCards conn username userDeckId = do
@@ -56,8 +67,8 @@ seedDeckWithFenAndMovesCards conn username userDeckId = do
   deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Deck Cards" username userDeckId))
 
   _ <- runTestApp conn $ do
-    _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      ("card_fen_" ++ username, username, userDeckId, "e4" :: String, "Fen card" :: String, "wh" :: String, Just ("8/8/8/8/8/8/8/8 w - - 0 1" :: String), 0 :: Integer)
+    _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, likelihood, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ("card_fen_" ++ username, username, userDeckId, "e4" :: String, "Fen card" :: String, "wh" :: String, Just ("8/8/8/8/8/8/8/8 w - - 0 1" :: String), 0.8 :: Double, 0 :: Integer)
     _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
       ("card_moves_" ++ username, username, userDeckId, "d4 d5" :: String, "Moves card" :: String, "wh" :: String, 0 :: Integer)
     pure ()

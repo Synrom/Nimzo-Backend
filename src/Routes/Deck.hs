@@ -74,9 +74,11 @@ server =
 
 listCardsHandler :: DeckContentQuery -> AppM PagedCards
 listCardsHandler query =
-  Repo.Deck.listCardsOfDeck includeFenCards query
+  Repo.Deck.listCardsOfDeck includeFenCards includeLikelihood query
   where
-    includeFenCards = Watermelon.supportsCardFen $ fromMaybe 3 query.schemaVersion
+    schemaVersion = fromMaybe 3 query.schemaVersion
+    includeFenCards = Watermelon.supportsCardFen schemaVersion
+    includeLikelihood = Watermelon.supportsCardLikelihood schemaVersion
 
 secureServer :: AuthResult AuthenticatedUser -> SecureServer
 secureServer auth =

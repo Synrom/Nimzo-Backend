@@ -1,0 +1,6 @@
+ALTER TABLE user_card_views
+  ADD COLUMN IF NOT EXISTS likelihood DOUBLE PRECISION;
+
+ALTER TABLE user_card_views
+  ALTER COLUMN likelihood DROP DEFAULT,
+  ALTER COLUMN likelihood DROP NOT NULL;
