@@ -37,7 +37,7 @@ type API =
   :<|> "deck" :> "featured" :> QueryParam "source" String :> QueryParam "limit" Integer :> Get '[JSON] [DeckSearchResult]
   :<|> "deck" :> "search" :> "continuations" :> QueryParam "prefix" String :> QueryParam "color" String :> QueryParam "limitDecks" Integer :> QueryParam "limitContinuations" Integer :> Get '[JSON] SearchContinuationsResponse
   :<|> "deck" :> "cards" :> ReqBody '[JSON] DeckContentQuery :> Post '[JSON] PagedCards
-  :<|> "deck" :> Capture "user_deck_id" String :> "continuations" :> QueryParam "prefix" String :> Get '[JSON] [String]
+  :<|> "deck" :> Capture "user_deck_id" String :> "continuations" :> QueryParam "prefix" String :> QueryParam "fen" String :> Get '[JSON] [String]
 
 type SecureAPI =
   "deck" :> Capture "id" Integer :> Get '[JSON] DeckDetails
@@ -53,7 +53,7 @@ type Server =
   :<|> (Maybe String -> Maybe Integer -> AppM [DeckSearchResult])
   :<|> (Maybe String -> Maybe String -> Maybe Integer -> Maybe Integer -> AppM SearchContinuationsResponse)
   :<|> (DeckContentQuery -> AppM PagedCards)
-  :<|> (String -> Maybe String -> AppM [String])
+  :<|> (String -> Maybe String -> Maybe String -> AppM [String])
 
 type SecureServer =
   (Integer -> AppM DeckDetails)
@@ -70,7 +70,7 @@ server =
   :<|> Repo.Deck.listFeatured
   :<|> (Repo.Deck.searchContinuations . fromMaybe "")
   :<|> listCardsHandler
-  :<|> (\deckId mPrefix -> Repo.Deck.listContinuations deckId (fromMaybe "" mPrefix))
+  :<|> (\deckId mPrefix mFen -> Repo.Deck.listContinuations deckId mFen (fromMaybe "" mPrefix))
 
 listCardsHandler :: DeckContentQuery -> AppM PagedCards
 listCardsHandler query =

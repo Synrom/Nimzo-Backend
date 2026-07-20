@@ -273,19 +273,39 @@ buildDeckContentPageQuery rawQuery userDeckId baseSql buildPrefixCondition =
       Nothing -> ("", [])
       Just p -> buildPrefixCondition p
 
-movesPrefixCondition :: String -> (Query, [Action])
-movesPrefixCondition prefix =
-  (" AND (moves = ? OR moves LIKE ? || ' %')", [toField prefix, toField prefix])
+movesPrefixCondition :: Maybe String -> String -> (Query, [Action])
+movesPrefixCondition rawStartingFen prefix =
+  ( " AND ((moves = ? OR moves LIKE ? || ' %') OR " <> differentFenSql <> ")",
+    [toField prefix, toField prefix] <> differentFenParams
+  )
+  where
+    startingFen = normalizeStartingFen rawStartingFen
+    customFenSql = "(fen IS NOT NULL AND fen <> '' AND split_part(fen, ' ', 1) <> ?)"
+    (differentFenSql, differentFenParams) = case startingFen of
+      Nothing -> (customFenSql, [toField startingPiecePlacement])
+      Just fen -> ("(" <> customFenSql <> " AND fen <> ?)", [toField startingPiecePlacement, toField fen])
 
-listContinuations :: MonadDB m => String -> String -> m [String]
-listContinuations userDeckId prefix =
+startingPiecePlacement :: String
+startingPiecePlacement = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+
+normalizeStartingFen :: Maybe String -> Maybe String
+normalizeStartingFen (Just fen)
+  | takeWhile (/= ' ') fen == startingPiecePlacement = Nothing
+normalizeStartingFen fen = fen
+
+listContinuations :: MonadDB m => String -> Maybe String -> String -> m [String]
+listContinuations userDeckId rawStartingFen prefix =
   map fromOnly <$> runQuery sql params
   where
+    startingFen = normalizeStartingFen rawStartingFen
+    (fenSql, fenParams) = case startingFen of
+      Nothing -> ("(fen IS NULL OR fen = '' OR split_part(fen, ' ', 1) = ?)", [toField startingPiecePlacement])
+      Just fen -> ("fen = ?", [toField fen])
     (sql, params) =
       buildContinuationQuery
-        "FROM user_card_views WHERE user_deck_id = ? AND fen IS NULL"
+        ("FROM user_card_views WHERE user_deck_id = ? AND " <> fenSql)
         "moves"
-        [toField userDeckId]
+        ([toField userDeckId] <> fenParams)
         prefix
 
 searchContinuations :: MonadDB m => String -> Maybe String -> Maybe Integer -> Maybe Integer -> m SearchContinuationsResponse
@@ -308,14 +328,22 @@ listCardsOfDeck :: MonadDB m => Bool -> DeckContentQuery -> m PagedCards
 listCardsOfDeck includeFenCards rawQuery = do
   let pageQuery = clampDeckContentQuery rawQuery
   deck <- find pageQuery.deckId
-  case rawQuery.cursor of
-    Nothing -> do
+  if shouldIncrementDownloadCount
+    then do
       _ <- execute "UPDATE decks SET download_count = download_count + 1 WHERE id = ?" (Only pageQuery.deckId)
       pure ()
-    Just _ -> pure ()
-  let (sql, params) = buildDeckContentPageQuery rawQuery deck.user_deck_id baseSql movesPrefixCondition
+    else pure ()
+  let (sql, params) = buildDeckContentPageQuery rawQuery deck.user_deck_id baseSql (movesPrefixCondition rawQuery.startingFen)
   paginateCards <$> runQuery sql params
   where
+    -- Released clients before isDownload was added always used a full 100-card
+    -- root page for downloads; their deck browser uses a 10-card page. Keep
+    -- that request shape working while allowing newer clients to be explicit.
+    isLegacyDownload = rawQuery.isDownload == Nothing && rawQuery.limit >= maxDeckContentLimit
+    shouldIncrementDownloadCount =
+      rawQuery.cursor == Nothing
+        && rawQuery.prefix == Nothing
+        && (rawQuery.isDownload == Just True || isLegacyDownload)
     fields = " moves, title, color, fen, id "
     fenFilter
       | includeFenCards = ""

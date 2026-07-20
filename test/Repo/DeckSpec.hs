@@ -627,7 +627,7 @@ spec = describe "Repo.Deck" $ do
         let featuredCardMoves = (head selected).featuredCardMoves
         featuredCardMoves `shouldBe` Just "d4 d5"
 
-        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing))
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing))
         pure ()
 
     it "returns empty list when deck has no cards" $ do
@@ -643,7 +643,7 @@ spec = describe "Repo.Deck" $ do
         let deck = mkTestDeck 0 "Empty Deck" "cardsuser" "udv_cards1"
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
-        let query = DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing Nothing
+        let query = DeckContentQuery Nothing 10 (Models.Deck.deckId inserted) Nothing Nothing Nothing Nothing
         result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
         pagedCards <- expectRight result
 
@@ -669,7 +669,7 @@ spec = describe "Repo.Deck" $ do
             ("card_" ++ show i, "limituser" :: String, "udv_limit1" :: String, "e2e4" :: String, "Card " ++ show i, "wh" :: String, 0 :: Integer))
             [1..5 :: Int]
 
-        let query = DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing Nothing
+        let query = DeckContentQuery Nothing 3 (Models.Deck.deckId inserted) Nothing Nothing Nothing Nothing
         result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
         pagedCards <- expectRight result
 
@@ -689,14 +689,14 @@ spec = describe "Repo.Deck" $ do
         let deck = mkTestDeck 0 "Test" "maxlimituser" "udv_maxlimit"
         inserted <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate deck)
 
-        let query = DeckContentQuery Nothing 1000 (Models.Deck.deckId inserted) Nothing Nothing
+        let query = DeckContentQuery Nothing 1000 (Models.Deck.deckId inserted) Nothing Nothing Nothing Nothing
         result <- runTestApp conn $ Repo.Deck.listCardsOfDeck True query
 
         -- Should not fail, just limit to 100
         _ <- expectRight result
         return ()
 
-    it "increments deck download_count when cursor is not set" $ do
+    it "increments deck download_count for explicit and legacy download requests only" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "downloaduser1" "download1@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert user
@@ -717,7 +717,12 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
-        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing
+        let browserQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True browserQuery)
+        afterBrowserRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+        fromOnly (head afterBrowserRows) `shouldBe` fromOnly (head beforeRows)
+
+        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing (Just True)
         _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
@@ -725,6 +730,16 @@ spec = describe "Repo.Deck" $ do
         let beforeCount = fromOnly (head beforeRows)
         let afterCount = fromOnly (head afterRows)
         afterCount `shouldBe` (beforeCount + 1)
+
+        let legacyDownloadQuery = DeckContentQuery Nothing 100 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True legacyDownloadQuery)
+        afterLegacyRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+        fromOnly (head afterLegacyRows) `shouldBe` (beforeCount + 2)
+
+        let optedOutQuery = DeckContentQuery Nothing 100 (Models.Deck.deckId deck) Nothing Nothing Nothing (Just False)
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True optedOutQuery)
+        afterOptOutRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+        fromOnly (head afterOptOutRows) `shouldBe` (beforeCount + 2)
 
     it "does not increment deck download_count when cursor is set" $ do
       withCleanDb $ \conn -> do
@@ -745,7 +760,7 @@ spec = describe "Repo.Deck" $ do
 
         beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
 
-        let cardQuery = DeckContentQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing Nothing
+        let cardQuery = DeckContentQuery (Just "dl2_card_1") 10 (Models.Deck.deckId deck) Nothing Nothing Nothing (Just True)
         _ <- expectRight =<< runTestApp conn (Repo.Deck.listCardsOfDeck True cardQuery)
 
         afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
@@ -753,6 +768,59 @@ spec = describe "Repo.Deck" $ do
         let beforeCount = fromOnly (head beforeRows)
         let afterCount = fromOnly (head afterRows)
         afterCount `shouldBe` beforeCount
+
+    it "does not increment deck download_count for prefetched move prefixes" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "downloadprefix" "downloadprefix@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_dl_prefix" :: String, "downloadprefix" :: String, "Download Prefix" :: String, True, 1 :: Integer)
+          pure ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "Download Prefix" "downloadprefix" "udv_dl_prefix"))
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("dl_prefix_card" :: String, "downloadprefix" :: String, "udv_dl_prefix" :: String, "e4 e5" :: String, "Line" :: String, "wh" :: String, 0 :: Integer)
+          pure ()
+
+        beforeRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+        _ <- expectRight =<< runTestApp conn
+          (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) Nothing (Just True)))
+        afterRows <- query conn "SELECT download_count FROM decks WHERE id = ?" (Only $ Models.Deck.deckId deck) :: IO [Only Integer]
+
+        fromOnly (head afterRows) `shouldBe` fromOnly (head beforeRows)
+
+    it "keeps cards from other FENs visible while filtering the current line by prefix" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "fenbrowser" "fenbrowser@example.com" "password"
+        let fenA = "8/8/8/8/8/8/7K/6k1 w - - 0 1" :: String
+        let fenB = "8/8/8/8/8/8/6K1/7k w - - 0 1" :: String
+        _ <- runTestApp conn $ Repo.User.insert user
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_deck_views (id, user_id, name, is_public, num_cards_total) VALUES (?, ?, ?, ?, ?)"
+            ("udv_fen_browser" :: String, "fenbrowser" :: String, "FEN Browser" :: String, True, 5 :: Integer)
+          pure ()
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate (mkTestDeck 0 "FEN Browser" "fenbrowser" "udv_fen_browser"))
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("fen_browser_1" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "e4 e5" :: String, "Matching default" :: String, "wh" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, next_request) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ("fen_browser_2" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "d4 d5" :: String, "Other default" :: String, "wh" :: String, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ("fen_browser_3" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "Kh3" :: String, "FEN A" :: String, "wh" :: String, fenA, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ("fen_browser_4" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "Kf3" :: String, "FEN B" :: String, "wh" :: String, fenB, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ("fen_browser_5" :: String, "fenbrowser" :: String, "udv_fen_browser" :: String, "c4 c5" :: String, "Explicit standard FEN" :: String, "wh" :: String, Just ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" :: String), 0 :: Integer)
+          pure ()
+
+        fromDefault <- expectRight =<< runTestApp conn
+          (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) Nothing Nothing))
+        map (.title) (cards fromDefault) `shouldBe` ["Matching default", "FEN A", "FEN B"]
+
+        fromFenA <- expectRight =<< runTestApp conn
+          (Repo.Deck.listCardsOfDeck True (DeckContentQuery Nothing 10 (Models.Deck.deckId deck) (Just "e4") (Just 4) (Just fenA) Nothing))
+        map (.title) (cards fromFenA) `shouldBe` ["Matching default", "FEN B"]
 
   describe "listContinuations" $ do
     it "returns distinct next moves for a single deck prefix" $ do
@@ -766,12 +834,12 @@ spec = describe "Repo.Deck" $ do
           , "d4 d5"
           ]
 
-        result <- runTestApp conn $ Repo.Deck.listContinuations "udv_cont" "e4 e5"
+        result <- runTestApp conn $ Repo.Deck.listContinuations "udv_cont" Nothing "e4 e5"
         continuations <- expectRight result
 
         continuations `shouldBe` ["Nc3", "Nf3"]
 
-    it "ignores cards with fen set" $ do
+    it "ignores custom FEN cards but treats an explicit standard FEN as default" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "contfenuser" "contfen@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert user
@@ -791,12 +859,42 @@ spec = describe "Repo.Deck" $ do
             , Just ("8/8/8/8/8/8/8/8 w - - 0 1" :: String)
             , 0 :: Integer
             )
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ( "udv_cont_fen_card_standard" :: String
+            , "contfenuser" :: String
+            , "udv_cont_fen" :: String
+            , "e4 e6" :: String
+            , "Explicit standard FEN" :: String
+            , "wh" :: String
+            , Just ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" :: String)
+            , 0 :: Integer
+            )
           return ()
 
-        result <- runTestApp conn $ Repo.Deck.listContinuations "udv_cont_fen" "e4"
+        result <- runTestApp conn $ Repo.Deck.listContinuations "udv_cont_fen" Nothing "e4"
         continuations <- expectRight result
 
-        continuations `shouldBe` ["c5", "e5"]
+        continuations `shouldBe` ["c5", "e5", "e6"]
+
+    it "returns continuations for the selected starting FEN only" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "contselectedfen" "contselectedfen@example.com" "password"
+        let selectedFen = "8/8/8/8/8/8/7K/6k1 w - - 0 1" :: String
+        _ <- runTestApp conn $ Repo.User.insert user
+        _ <- insertDeckWithCards conn "contselectedfen" "udv_cont_selected_fen" "Selected FEN" True
+          ["e4 e5", "d4 d5"]
+        _ <- runTestApp conn $ do
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ("selected_fen_1" :: String, "contselectedfen" :: String, "udv_cont_selected_fen" :: String, "Kh3 Kg2" :: String, "Selected one" :: String, "wh" :: String, selectedFen, 0 :: Integer)
+          _ <- execute "INSERT INTO user_card_views (id, user_id, user_deck_id, moves, title, color, fen, next_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ("selected_fen_2" :: String, "contselectedfen" :: String, "udv_cont_selected_fen" :: String, "Kf3" :: String, "Other FEN" :: String, "wh" :: String, Just ("8/8/8/8/8/8/6K1/7k w - - 0 1" :: String), 0 :: Integer)
+          pure ()
+
+        root <- expectRight =<< runTestApp conn (Repo.Deck.listContinuations "udv_cont_selected_fen" (Just selectedFen) "")
+        afterKh3 <- expectRight =<< runTestApp conn (Repo.Deck.listContinuations "udv_cont_selected_fen" (Just selectedFen) "Kh3")
+
+        root `shouldBe` ["Kh3"]
+        afterKh3 `shouldBe` ["Kg2"]
 
   describe "searchContinuations" $ do
     it "returns continuations and deck counts for public decks only" $ do

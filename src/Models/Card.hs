@@ -14,7 +14,9 @@ data DeckContentQuery = DeckContentQuery
     limit  :: Integer,
     deckId :: Integer,
     prefix :: Maybe String,
-    schemaVersion :: Maybe Integer
+    schemaVersion :: Maybe Integer,
+    startingFen :: Maybe String,
+    isDownload :: Maybe Bool
   }
   deriving (Eq, Show, Generic)
 
@@ -49,6 +51,8 @@ instance FromJSON DeckContentQuery where
       <*> obj .: "deckId"
       <*> obj .:? "prefix"
       <*> obj .:? "schemaVersion"
+      <*> obj .:? "fen"
+      <*> obj .:? "isDownload"
 
 cardJsonOpts :: Options
 cardJsonOpts = defaultOptions { omitNothingFields = True }

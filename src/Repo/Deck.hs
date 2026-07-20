@@ -49,7 +49,7 @@ findWithRating = Query.findWithRating
 alreadyExists :: MonadDB m => Deck -> m Bool
 alreadyExists = Query.alreadyExists
 
-listContinuations :: MonadDB m => String -> String -> m [String]
+listContinuations :: MonadDB m => String -> Maybe String -> String -> m [String]
 listContinuations = Query.listContinuations
 
 searchContinuations :: MonadDB m => String -> Maybe String -> Maybe Integer -> Maybe Integer -> m SearchContinuationsResponse

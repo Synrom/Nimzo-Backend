@@ -5,6 +5,7 @@ module Routes.DeckSpec (spec) where
 
 import Test.Hspec
 import Database.PostgreSQL.Simple (Connection)
+import Data.Aeson (eitherDecode)
 
 import qualified Models.Card as Card
 import qualified Models.Deck
@@ -18,11 +19,15 @@ import TestHelpers
 spec :: Spec
 spec = describe "Routes.Deck" $ do
   describe "listCardsHandler" $ do
+    it "decodes legacy card requests without newer optional fields" $ do
+      let decoded = eitherDecode "{\"limit\":100,\"deckId\":1}" :: Either String DeckContentQuery
+      decoded `shouldBe` Right (DeckContentQuery Nothing 100 1 Nothing Nothing Nothing Nothing)
+
     it "defaults missing schemaVersion to 3 and excludes fen cards" $ do
       withCleanDb $ \conn -> do
         deck <- seedDeckWithFenAndMovesCards conn "deckcardsdefault" "udv_deck_cards_default"
 
-        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing
+        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing Nothing Nothing Nothing
         pagedCards <- expectRight =<< runTestApp conn (Routes.Deck.listCardsHandler cardQuery)
 
         map (.title) (Card.cards pagedCards) `shouldBe` ["Moves card"]
@@ -32,7 +37,7 @@ spec = describe "Routes.Deck" $ do
       withCleanDb $ \conn -> do
         deck <- seedDeckWithFenAndMovesCards conn "deckcardsv4" "udv_deck_cards_v4"
 
-        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing (Just 4)
+        let cardQuery = DeckContentQuery Nothing 10 (Models.Deck.deckId deck) Nothing (Just 4) Nothing Nothing
         pagedCards <- expectRight =<< runTestApp conn (Routes.Deck.listCardsHandler cardQuery)
 
         map (.title) (Card.cards pagedCards) `shouldBe` ["Fen card", "Moves card"]
