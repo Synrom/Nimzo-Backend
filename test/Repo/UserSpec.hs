@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 module Repo.UserSpec (spec) where
 
@@ -135,8 +136,60 @@ spec = describe "Repo.User" $ do
         result <- runTestApp conn $ Repo.User.updateXP 3 inserted
         updated <- expectRight result
 
-        -- Streak logic depends on time difference
-        updated.streak `shouldSatisfy` (>= 0)
+        updated.streak `shouldBe` 1
+
+  describe "nextStreakStampAt" $ do
+    it "starts a zero streak at one" $ do
+      let lastActivity = read "2026-07-29 08:00:00 UTC"
+          now = read "2026-07-29 14:00:00 UTC"
+          user = (mkTestUser "newstreak" "newstreak@example.com" "password")
+            { Models.User.streak = 0
+            , last_activity = lastActivity
+            }
+
+      (nextStreakStampAt now user).streak `shouldBe` 1
+
+    it "increments after exactly 12 hours" $ do
+      let lastActivity = read "2026-07-29 20:00:00 UTC"
+          now = read "2026-07-30 08:00:00 UTC"
+          user = (mkTestUser "nextday" "nextday@example.com" "password")
+            { Models.User.streak = 4
+            , last_activity = lastActivity
+            }
+
+      (nextStreakStampAt now user).streak `shouldBe` 5
+
+    it "does not increment before 12 hours and records the latest review" $ do
+      let lastActivity = read "2026-07-29 08:00:00 UTC"
+          now = read "2026-07-29 19:59:59 UTC"
+          user = (mkTestUser "sameday" "sameday@example.com" "password")
+            { Models.User.streak = 4
+            , last_activity = lastActivity
+            }
+          updated = nextStreakStampAt now user
+
+      updated.streak `shouldBe` 4
+      updated.last_activity `shouldBe` now
+
+    it "increments when reviewing exactly 48 hours later" $ do
+      let lastActivity = read "2026-07-27 08:00:00 UTC"
+          now = read "2026-07-29 08:00:00 UTC"
+          user = (mkTestUser "restartstreak" "restartstreak@example.com" "password")
+            { Models.User.streak = 4
+            , last_activity = lastActivity
+            }
+
+      (nextStreakStampAt now user).streak `shouldBe` 5
+
+    it "restarts at one after more than 48 hours" $ do
+      let lastActivity = read "2026-07-27 07:59:59 UTC"
+          now = read "2026-07-29 08:00:00 UTC"
+          user = (mkTestUser "expiredstreak" "expiredstreak@example.com" "password")
+            { Models.User.streak = 4
+            , last_activity = lastActivity
+            }
+
+      (nextStreakStampAt now user).streak `shouldBe` 1
 
   describe "password hashing" $ do
     it "hashes password with salt correctly" $ do

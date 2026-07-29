@@ -9,12 +9,12 @@ import qualified Data.Text as T
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Maybe (listToMaybe)
-import Data.Time (getCurrentTime)
+import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import Control.Exception (tryJust)
 import Data.String (fromString)
 import Repo.Classes
 import Models.Deck (Deck(..))
-import Repo.Utils (one, isNextDay, twoOrMoreDaysPassed)
+import Repo.Utils (one)
 import App.Error (AppError(..))
 import Models.User (User(..), UserXP, UserEmail(..), UserID(..))
 import Repo.Xp (calcXp)
@@ -89,15 +89,25 @@ findEmail email = listToMaybe <$> runQuery query (Only email)
     query :: Query
     query = "SELECT" <> returnFields <> "FROM users WHERE email = ?"
 
+nextStreakStampAt :: UTCTime -> User -> User
+nextStreakStampAt now olduser
+  | olduser.streak == 0 =
+      olduser {streak = 1, last_activity = now}
+  | elapsed > streakDeadline =
+      olduser {streak = 1, last_activity = now}
+  | elapsed >= streakIncrementInterval =
+      olduser {streak = olduser.streak + 1, last_activity = now}
+  | otherwise =
+      olduser {last_activity = now}
+  where
+    elapsed = diffUTCTime now olduser.last_activity
+    streakIncrementInterval = 12 * 60 * 60
+    streakDeadline = 48 * 60 * 60
+
 nextStreakStamp :: User -> IO User
 nextStreakStamp olduser = do
   now <- getCurrentTime
-  pure $
-    if isNextDay now olduser.last_activity
-      then olduser {streak = olduser.streak + 1, last_activity = now}
-    else if twoOrMoreDaysPassed now olduser.last_activity
-      then olduser {streak = 0, last_activity = now}
-    else olduser
+  pure $ nextStreakStampAt now olduser
 
 updateXP :: Integer -> User -> AppM User
 updateXP nrCards olduser = do

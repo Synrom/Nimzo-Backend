@@ -11,7 +11,7 @@ import Data.Aeson (Value(..))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as KeyMap
 import Data.String (fromString)
-import Data.Time (getCurrentTime)
+import Data.Time (addUTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad (forM_)
 
@@ -263,6 +263,77 @@ spec = describe "Routes.Watermelon" $ do
         KeyMap.lookup "likelihood" firstCard `shouldBe` Nothing
 
   describe "pushRoute" $ do
+    it "increments a zero streak after the user's first card review" $ do
+      withCleanDb $ \conn -> do
+        let username = "firstreview"
+            user = mkTestUser username "firstreview@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        let deck = mkTestUserDeckView "first_review_deck" username "First Review Deck"
+            card = mkTestUserCardView "first_review_card" username "first_review_deck" "e2e4"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate minTime deck
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate minTime card
+
+        now <- getCurrentTime
+        _ <- runTestApp conn $
+          execute
+            "UPDATE users SET streak = 0, last_activity = ? WHERE username = ?"
+            (now, username)
+
+        let lastPulled = floor $ utcTimeToPOSIXSeconds now - 10
+            reviewedCard = card
+              { numCorrectTrials = 1
+              , nextRequest = 1000 * 60 * 15
+              }
+            changeSet = Changes
+              { user_card_views = TableChanges [] [reviewedCard] []
+              , user_deck_views = TableChanges [] [] []
+              }
+            pushParams = PushParams lastPulled 4 changeSet
+            authUser = AUser username False now
+
+        success <- expectRight =<< runTestApp conn (Routes.Watermelon.pushRoute authUser pushParams)
+
+        success.streak `shouldBe` 1
+        storedUser <- expectJust =<< expectRight =<< runTestApp conn (Repo.User.findUsername username)
+        storedUser.streak `shouldBe` 1
+
+    it "restarts the streak at one when reviewing after more than 48 hours" $ do
+      withCleanDb $ \conn -> do
+        let username = "restartreview"
+            user = mkTestUser username "restartreview@example.com" "password"
+        _ <- runTestApp conn $ Repo.User.insert user
+
+        let deck = mkTestUserDeckView "restart_review_deck" username "Restart Review Deck"
+            card = mkTestUserCardView "restart_review_card" username "restart_review_deck" "e2e4"
+        _ <- runTestApp conn $ Repo.UserDeckView.insertOrUpdate minTime deck
+        _ <- runTestApp conn $ Repo.UserCardView.insertOrUpdate minTime card
+
+        now <- getCurrentTime
+        let previousActivity = addUTCTime (negate $ 49 * 60 * 60) now
+        _ <- runTestApp conn $
+          execute
+            "UPDATE users SET streak = 4, last_activity = ? WHERE username = ?"
+            (previousActivity, username)
+
+        let lastPulled = floor $ utcTimeToPOSIXSeconds now - 10
+            reviewedCard = card
+              { numCorrectTrials = 1
+              , nextRequest = 1000 * 60 * 15
+              }
+            changeSet = Changes
+              { user_card_views = TableChanges [] [reviewedCard] []
+              , user_deck_views = TableChanges [] [] []
+              }
+            pushParams = PushParams lastPulled 4 changeSet
+            authUser = AUser username False now
+
+        success <- expectRight =<< runTestApp conn (Routes.Watermelon.pushRoute authUser pushParams)
+
+        success.streak `shouldBe` 1
+        storedUser <- expectJust =<< expectRight =<< runTestApp conn (Repo.User.findUsername username)
+        storedUser.streak `shouldBe` 1
+
     it "successfully pushes new user deck views" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "pushuser" "push@example.com" "password"
