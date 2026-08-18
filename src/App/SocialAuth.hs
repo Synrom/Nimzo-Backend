@@ -85,7 +85,7 @@ decodeAndVerifyClaims providerName settings now jwkSet token = case runExcept ve
     verification :: Except JWTError ClaimsSet
     verification = do
       let validationSettings = defaultJWTValidationSettings audiencePredicate
-      signedJwt <- decodeCompact (BL.fromStrict $ T.encodeUtf8 $ T.pack token)
+      signedJwt <- decodeCompact (BL.fromStrict $ T.encodeUtf8 $ T.pack token) :: Except JWTError SignedJWT
       verifyClaimsAt validationSettings jwkSet now signedJwt
     audiencePredicate audience = any (`matchesStringOrUri` audience) (clientIds settings)
     validIssuer claims = maybe False (\issuer -> issuer `elem` issuers settings) (claimString "iss" claims)
