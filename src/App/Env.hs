@@ -3,7 +3,7 @@ module App.Env where
 import Database.PostgreSQL.Simple (Connection, close, connectPostgreSQL)
 import Servant.Auth.Server (JWTSettings)
 import Data.Time (NominalDiffTime)
-import App.Config (MailConfiguration, SocialAuthConfiguration)
+import App.Config (MailConfiguration, SocialAuthConfiguration, APNSConfiguration)
 import Data.ByteString.Char8 (pack)
 
 data Env = Env
@@ -14,6 +14,7 @@ data Env = Env
   , deckImageDir :: FilePath
   , deckImagePublicBase :: String
   , deckPromotionModerators :: [String]
+  , apnsConfig :: Maybe APNSConfiguration
   }
 
 withConn :: Env -> (Connection -> IO a) -> IO a

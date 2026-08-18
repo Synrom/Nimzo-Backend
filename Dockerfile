@@ -5,6 +5,9 @@ RUN apt-get update && \
     ghc \
     libpq-dev \
     cabal-install \
+    ca-certificates \
+    curl \
+    openssl \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -13,5 +16,4 @@ COPY . .
 RUN cabal update && \
     cabal build
 
-CMD ["cabal", "run"]
-
+CMD ["cabal", "run", "App"]

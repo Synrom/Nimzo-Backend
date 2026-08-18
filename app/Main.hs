@@ -2,6 +2,7 @@
 
 module Main where
 
+import Control.Concurrent (forkIO)
 import Control.Monad (when)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Builder as BB
@@ -11,6 +12,7 @@ import Network.Wai.Logger (withStdoutLogger)
 import Network.Wai (Middleware, rawPathInfo, requestMethod, responseStatus)
 import Network.Wai.Internal (Response(..))
 import Network.HTTP.Types.Status (statusCode, statusMessage)
+import System.Environment (lookupEnv)
 import System.IO (hSetBuffering, stdout, stderr, BufferMode(LineBuffering))
 import Servant
 import Servant.Auth.Server
@@ -18,9 +20,11 @@ import Network.Wai.Middleware.Cors
 import Data.ByteString.Char8 (pack)
 import Database.PostgreSQL.Simple (connectPostgreSQL)
 import App.API (api)
+import App.APNS (newAPNSClient)
 import App.Env (Env(..))
 import App.Server (mkServer)
-import App.Config 
+import App.Config
+import Worker.StreakNotification (runWorker)
 
 responseDetails :: Response -> String
 responseDetails (ResponseBuilder _ _ builder) =
@@ -54,6 +58,17 @@ logErrorResponses app req sendResponse =
         ++ responseDetails res
     sendResponse res
 
+startStreakNotificationWorker :: String -> Maybe APNSConfiguration -> IO ()
+startStreakNotificationWorker dbUrl maybeConfig = case maybeConfig of
+  Nothing -> putStrLn "APNs configuration missing; streak notification worker disabled."
+  Just config -> do
+    workerId <- maybe "streak-notification-worker" id <$> lookupEnv "NOTIFICATION_WORKER_ID"
+    workerConn <- connectPostgreSQL (pack dbUrl)
+    client <- newAPNSClient config
+    putStrLn "Streak notification worker started."
+    _ <- forkIO $ runWorker workerConn client workerId
+    pure ()
+
 main :: IO ()
 main = do
   hSetBuffering stdout LineBuffering
@@ -64,7 +79,9 @@ main = do
   uploadDir <- loadDeckImageDir
   uploadPublicBase <- loadDeckImagePublicBase
   promotionModerators <- loadDeckPromotionModerators
+  maybeAPNSConfig <- loadAPNSConfiguration
   conn <-connectPostgreSQL $ pack dbUrl
+  startStreakNotificationWorker dbUrl maybeAPNSConfig
   jwtCfg <- loadJWT
   origins <- loadWebOrigins
   let cookie = defaultCookieSettings
@@ -76,6 +93,7 @@ main = do
         , deckImageDir = uploadDir
         , deckImagePublicBase = uploadPublicBase
         , deckPromotionModerators = promotionModerators
+        , apnsConfig = maybeAPNSConfig
         }
       ctx    = jwtCfg :. cookie :. EmptyContext
   withStdoutLogger $ \logger -> do

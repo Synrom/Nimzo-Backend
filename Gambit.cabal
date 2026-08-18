@@ -38,6 +38,7 @@ library
       Models.UserCardView,
       Models.UserDeckView,
       Models.Watermelon,
+      Models.StreakNotification,
       App.Error,
       App.Options,
       App.Mail,
@@ -49,6 +50,7 @@ library
       App.SocialAuth,
       App.Server,
       App.Config,
+      App.APNS,
       Repo.Classes,
       Repo.Deck,
       Repo.AndroidEmail,
@@ -66,6 +68,7 @@ library
       Repo.Rank,
       Repo.UserCardView,
       Repo.UserDeckView,
+      Repo.StreakNotification,
       Routes.Deck,
       Routes.User,
       Routes.Android,
@@ -73,6 +76,8 @@ library
       Routes.Experiment,
       Routes.Watermelon,
       Routes.Auth,
+      Routes.StreakNotification,
+      Worker.StreakNotification,
   build-depends: base >=4.14 && <5,
                     servant, 
                     servant-server,
@@ -111,6 +116,7 @@ library
                     dotenv,
                     base,
                     postgresql-simple
+                    , process
   default-language: Haskell2010
 
 executable App
@@ -163,7 +169,8 @@ test-suite Tests
       Routes.DeckSpec,
       Routes.ExperimentSpec,
       Routes.UserSpec,
-      Routes.WatermelonSpec
+      Routes.WatermelonSpec,
+      Routes.StreakNotificationSpec
     hs-source-dirs:
       test
     build-depends:  servant,

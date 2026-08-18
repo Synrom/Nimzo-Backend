@@ -14,6 +14,7 @@ import qualified Routes.DeckSpec
 import qualified Routes.ExperimentSpec
 import qualified Routes.UserSpec
 import qualified Routes.WatermelonSpec
+import qualified Routes.StreakNotificationSpec
 
 main :: IO ()
 main = hspec spec
@@ -32,3 +33,4 @@ spec = do
     describe "Experiment Routes" Routes.ExperimentSpec.spec
     describe "User Routes" Routes.UserSpec.spec
     describe "Watermelon Sync Routes" Routes.WatermelonSpec.spec
+    describe "Streak Notification Routes" Routes.StreakNotificationSpec.spec

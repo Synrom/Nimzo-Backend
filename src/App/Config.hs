@@ -7,6 +7,7 @@ import Data.List (dropWhileEnd)
 import Servant.Auth.Server (fromSecret, JWTSettings, defaultJWTSettings)
 import Data.ByteString.Char8 (pack)
 import Data.ByteString (ByteString)
+import Models.StreakNotification (APNSEnvironment(..))
 
 import Database.PostgreSQL.Simple
   ( ConnectInfo
@@ -118,3 +119,26 @@ loadDeckImagePublicBase = do
 
 loadDeckPromotionModerators :: IO [String]
 loadDeckPromotionModerators = loadOptionalCsv "DECK_PROMOTION_MODERATORS"
+
+data APNSConfiguration = APNSConfiguration
+  { apnsTeamId :: String
+  , apnsKeyId :: String
+  , apnsPrivateKeyPath :: FilePath
+  , apnsBundleId :: String
+  , apnsDefaultEnvironment :: APNSEnvironment
+  } deriving (Show)
+
+loadAPNSConfiguration :: IO (Maybe APNSConfiguration)
+loadAPNSConfiguration = do
+  values <- parseFile ".env"
+  load False values
+  team <- Env.lookupEnv "APNS_TEAM_ID"
+  key <- Env.lookupEnv "APNS_KEY_ID"
+  keyPath <- Env.lookupEnv "APNS_PRIVATE_KEY_PATH"
+  bundle <- Env.lookupEnv "APNS_BUNDLE_ID"
+  environment <- Env.lookupEnv "APNS_DEFAULT_ENVIRONMENT"
+  pure $ case (team, key, keyPath, bundle) of
+    (Just teamId, Just keyId, Just path, Just bundleId) ->
+      Just $ APNSConfiguration teamId keyId path bundleId
+        (if environment == Just "sandbox" then Sandbox else Production)
+    _ -> Nothing

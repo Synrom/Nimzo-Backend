@@ -6,7 +6,7 @@
 module App.Error where
 
 import qualified Data.Text as T
-import Servant (ServerError(..), err302, err401, err404, err409, err500, (:<|>) (..))
+import Servant (ServerError(..), err302, err400, err401, err404, err409, err500, (:<|>) (..))
 import Database.PostgreSQL.Simple (SqlError(..))
 import Database.PostgreSQL.Simple.Errors (ConstraintViolation (..), constraintViolation)
 import Network.HTTP.Types.Header (Header, hLocation)
@@ -18,7 +18,7 @@ import Data.CaseInsensitive  (mk)
 import Control.Monad.Except
 import GHC.Generics
 
-data AppError = NotFound String | Unauthorized String | Internal String | AlreadyExists String | MergeConflict String | Redirect String
+data AppError = BadRequest String | NotFound String | Unauthorized String | Internal String | AlreadyExists String | MergeConflict String | Redirect String
   deriving (Generic, Show)
 
 class ThrowAppError a where
@@ -47,6 +47,7 @@ jsonize err m = err { errBody = jsonMsg m, errHeaders = jsonHeader }
 
 toServerError :: AppError -> ServerError
 toServerError = \case
+  BadRequest m -> jsonize err400 m
   NotFound m -> jsonize err404 m
   Unauthorized m -> jsonize err401 m
   Internal m -> jsonize err500 m

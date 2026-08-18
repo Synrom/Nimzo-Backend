@@ -26,6 +26,7 @@ import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
 import qualified Routes.Onboarding as Onboarding
 import qualified Routes.Experiment as Experiment
+import qualified Routes.StreakNotification as StreakNotification
 import App.Auth (AuthenticatedUser)
 
 secureServerT :: AuthResult AuthenticatedUser -> ServerT SecureAPI AppM
@@ -34,6 +35,7 @@ secureServerT auth =
   :<|> User.server auth
   :<|> Onboarding.secureServer auth
   :<|> DeckRoutes.secureServer auth
+  :<|> StreakNotification.server auth
 
 serverT :: ServerT API AppM
 serverT = secureServerT :<|> Onboarding.publicServer :<|> Experiment.server :<|> AndroidRoutes.server :<|> AuthRoutes.server :<|> DeckRoutes.server

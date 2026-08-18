@@ -3,6 +3,7 @@ dist-newstyle
 *~
 .vscode
 .env
+*.p8
 *.swp
 CLAUDE.md
 

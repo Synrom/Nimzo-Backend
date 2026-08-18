@@ -54,6 +54,10 @@ withTestDb = bracket mkTestConn close
 -- | Clean all tables in the test database
 cleanTestDb :: Connection -> IO ()
 cleanTestDb conn = do
+  _ <- execute_ conn "DELETE FROM notification_jobs"
+  _ <- execute_ conn "DELETE FROM streak_live_activities"
+  _ <- execute_ conn "DELETE FROM streak_notification_schedules"
+  _ <- execute_ conn "DELETE FROM ios_notification_installations"
   _ <- execute_ conn "DELETE FROM android_emails"
   _ <- execute_ conn "DELETE FROM feedback"
   _ <- execute_ conn "DELETE FROM experiment_events"
@@ -71,6 +75,7 @@ cleanTestDb conn = do
 
 ensureTestSchema :: Connection -> IO ()
 ensureTestSchema conn = do
+  applySqlFile conn "initdb/23_streak_live_activity_notifications.sql"
   _ <- execute_ conn
     "CREATE TABLE IF NOT EXISTS android_emails (\
     \ id SERIAL PRIMARY KEY,\
@@ -178,7 +183,7 @@ mkTestEnv conn = do
   let jwtCfg = defaultJWTSettings jwtKey
   let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" "http://localhost/change" True
   let socialCfg = SocialAuthConfiguration ["test-google-client"] ["test-apple-client"]
-  return $ Env conn jwtCfg mailCfg socialCfg "/tmp/nimzo-test-deck-images" "/deck-images" []
+  return $ Env conn jwtCfg mailCfg socialCfg "/tmp/nimzo-test-deck-images" "/deck-images" [] Nothing
 
 -- | Run an AppM action in a test environment
 runTestApp :: Connection -> AppM a -> IO (Either AppError a)

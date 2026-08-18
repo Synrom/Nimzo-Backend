@@ -62,12 +62,14 @@ import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
 import qualified Routes.Onboarding as Onboarding
 import qualified Routes.Experiment as Experiment
+import qualified Routes.StreakNotification as StreakNotification
 
 type SecureAPI =
   Watermelon.API
   :<|> User.API
   :<|> Onboarding.SecureAPI
   :<|> DeckRoutes.SecureAPI
+  :<|> StreakNotification.API
 
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI
