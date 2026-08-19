@@ -181,7 +181,7 @@ spec = describe "Repo.User" $ do
 
       (nextStreakStampAt now user).streak `shouldBe` 5
 
-    it "restarts at one after more than 48 hours" $ do
+    it "still increments after more than 48 hours (deadline resets are handled elsewhere, e.g. a cron job)" $ do
       let lastActivity = read "2026-07-27 07:59:59 UTC"
           now = read "2026-07-29 08:00:00 UTC"
           user = (mkTestUser "expiredstreak" "expiredstreak@example.com" "password")
@@ -189,7 +189,19 @@ spec = describe "Repo.User" $ do
             , last_activity = lastActivity
             }
 
-      (nextStreakStampAt now user).streak `shouldBe` 1
+      (nextStreakStampAt now user).streak `shouldBe` 5
+
+    it "only increments by one no matter how many days have passed" $ do
+      let lastActivity = read "2026-06-01 08:00:00 UTC"
+          now = read "2026-07-29 08:00:00 UTC"
+          user = (mkTestUser "longgap" "longgap@example.com" "password")
+            { Models.User.streak = 4
+            , last_activity = lastActivity
+            }
+          updated = nextStreakStampAt now user
+
+      updated.streak `shouldBe` 5
+      updated.last_activity `shouldBe` now
 
   describe "password hashing" $ do
     it "hashes password with salt correctly" $ do

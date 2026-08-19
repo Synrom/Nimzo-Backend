@@ -298,7 +298,7 @@ spec = describe "Routes.Watermelon" $ do
         storedUser <- expectJust =<< expectRight =<< runTestApp conn (Repo.User.findUsername username)
         storedUser.streak `shouldBe` 1
 
-    it "restarts the streak at one when reviewing after more than 48 hours" $ do
+    it "still increments the streak when reviewing after more than 48 hours (deadline resets are handled elsewhere, e.g. a cron job)" $ do
       withCleanDb $ \conn -> do
         let username = "restartreview"
             user = mkTestUser username "restartreview@example.com" "password"
@@ -330,9 +330,9 @@ spec = describe "Routes.Watermelon" $ do
 
         success <- expectRight =<< runTestApp conn (Routes.Watermelon.pushRoute authUser pushParams)
 
-        success.streak `shouldBe` 1
+        success.streak `shouldBe` 5
         storedUser <- expectJust =<< expectRight =<< runTestApp conn (Repo.User.findUsername username)
-        storedUser.streak `shouldBe` 1
+        storedUser.streak `shouldBe` 5
 
     it "successfully pushes new user deck views" $ do
       withCleanDb $ \conn -> do

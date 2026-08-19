@@ -93,8 +93,6 @@ nextStreakStampAt :: UTCTime -> User -> User
 nextStreakStampAt now olduser
   | olduser.streak == 0 =
       olduser {streak = 1, last_activity = now}
-  | elapsed > streakDeadline =
-      olduser {streak = 1, last_activity = now}
   | elapsed >= streakIncrementInterval =
       olduser {streak = olduser.streak + 1, last_activity = now}
   | otherwise =
@@ -102,7 +100,6 @@ nextStreakStampAt now olduser
   where
     elapsed = diffUTCTime now olduser.last_activity
     streakIncrementInterval = 12 * 60 * 60
-    streakDeadline = 48 * 60 * 60
 
 nextStreakStamp :: User -> IO User
 nextStreakStamp olduser = do
