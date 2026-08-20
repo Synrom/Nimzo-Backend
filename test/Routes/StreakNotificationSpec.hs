@@ -222,3 +222,128 @@ spec = do
       hasNextAttempt `shouldBe` True
       [Only scheduleStatus] <- query connection "SELECT status FROM streak_notification_schedules WHERE schedule_id=?::uuid" (Only schedule.scheduleId) :: IO [Only Text]
       scheduleStatus `shouldBe` "scheduled"
+
+    it "retires an active schedule when an installation changes owner" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "old-owner" "old-owner@example.test" "password")
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "new-owner" "new-owner@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Production
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "old-owner" "transferred-install" install)
+      _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "old-owner" "transferred-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Production)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "old-owner" $ CardPlayedRequest "transfer-event" "transferred-install" now)
+      _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "old-owner" schedule.scheduleId $ ActivityTokenRequest "transferred-install" "transfer-activity" 1 "bb00" Production)
+
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "new-owner" "transferred-install" install)
+
+      [Only owner] <- query connection "SELECT username FROM ios_notification_installations WHERE installation_id='transferred-install'" () :: IO [Only String]
+      owner `shouldBe` "new-owner"
+      [(scheduleStatus, endJobs)] <- query connection "SELECT s.status,count(j.job_id) FROM streak_notification_schedules s LEFT JOIN notification_jobs j ON j.schedule_id=s.schedule_id AND j.job_type='end' WHERE s.schedule_id=?::uuid GROUP BY s.status" (Only schedule.scheduleId) :: IO [(Text, Int)]
+      (scheduleStatus, endJobs) `shouldBe` ("superseded", 1)
+
+    it "cancels work and queues an activity end when Live Activities are disabled" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "disable-live" "disable-live@example.test" "password")
+      let enabled = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Production
+          disabled = enabled { liveActivitiesEnabled = False }
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "disable-live" "disable-install" enabled)
+      _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "disable-live" "disable-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Production)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "disable-live" $ CardPlayedRequest "disable-event" "disable-install" now)
+      _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "disable-live" schedule.scheduleId $ ActivityTokenRequest "disable-install" "disable-activity" 1 "bb00" Production)
+
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "disable-live" "disable-install" disabled)
+
+      [Only status] <- query connection "SELECT status FROM streak_notification_schedules WHERE schedule_id=?::uuid" (Only schedule.scheduleId) :: IO [Only Text]
+      status `shouldBe` "superseded"
+      [Only endJobs] <- query connection "SELECT count(*) FROM notification_jobs WHERE schedule_id=?::uuid AND job_type='end'" (Only schedule.scheduleId) :: IO [Only Int]
+      endJobs `shouldBe` 1
+
+    it "immediately ends an activity token submitted for a superseded schedule" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "late-activity" "late-activity@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "26.0" "1" "1" True (Just True) Production
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "late-activity" "late-activity-install" install)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "late-activity" $ CardPlayedRequest "late-activity-event" "late-activity-install" now)
+      _ <- execute connection "UPDATE streak_notification_schedules SET status='superseded' WHERE schedule_id=?::uuid" (Only schedule.scheduleId)
+
+      _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "late-activity" schedule.scheduleId $ ActivityTokenRequest "late-activity-install" "late-arriving-activity" 1 "bb00" Production)
+
+      [(jobType, immediate)] <- query connection "SELECT job_type,immediate_dismissal FROM notification_jobs WHERE schedule_id=?::uuid AND job_type='end'" (Only schedule.scheduleId) :: IO [(Text, Bool)]
+      (jobType, immediate) `shouldBe` ("end", True)
+
+    it "deletes an owned installation and invalidates its active activity" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "delete-install" "delete-install@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Production
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "delete-install" "deleted-install" install)
+      _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "delete-install" "deleted-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Production)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "delete-install" $ CardPlayedRequest "delete-install-event" "deleted-install" now)
+      _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "delete-install" schedule.scheduleId $ ActivityTokenRequest "deleted-install" "deleted-activity" 1 "bb00" Production)
+
+      _ <- expectRight =<< runTestApp connection (Notifications.deleteInstallation "delete-install" "deleted-install")
+
+      [(deleted, enabled)] <- query connection "SELECT deleted_at IS NOT NULL,live_activities_enabled FROM ios_notification_installations WHERE installation_id='deleted-install'" () :: IO [(Bool, Bool)]
+      (deleted, enabled) `shouldBe` (True, False)
+      [Only valid] <- query connection "SELECT token_valid FROM streak_live_activities WHERE schedule_id=?::uuid" (Only schedule.scheduleId) :: IO [Only Bool]
+      valid `shouldBe` False
+
+    it "cancels a claimed job whose schedule has become stale" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "stale-job" "stale-job@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Sandbox
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "stale-job" "stale-job-install" install)
+      _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "stale-job" "stale-job-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Sandbox)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "stale-job" $ CardPlayedRequest "stale-job-event" "stale-job-install" now)
+      _ <- execute connection "UPDATE streak_notification_schedules SET status='superseded' WHERE schedule_id=?::uuid" (Only schedule.scheduleId)
+      _ <- execute connection "UPDATE notification_jobs SET run_at=now() WHERE schedule_id=?::uuid AND job_type='start'" (Only schedule.scheduleId)
+
+      processed <- runOnceWith connection (\_ -> expectationFailure "stale jobs must not reach APNs" >> error "unreachable") "stale-worker"
+      processed `shouldBe` 1
+      [Only status] <- query connection "SELECT status FROM notification_jobs WHERE schedule_id=?::uuid AND job_type='start'" (Only schedule.scheduleId) :: IO [Only Text]
+      status `shouldBe` "cancelled"
+
+    it "finishes a tokenless end job without contacting APNs" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "tokenless-end" "tokenless-end@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "26.0" "1" "1" True (Just True) Sandbox
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "tokenless-end" "tokenless-end-install" install)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "tokenless-end" $ CardPlayedRequest "tokenless-end-event" "tokenless-end-install" now)
+      _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "tokenless-end" schedule.scheduleId $ ActivityTokenRequest "tokenless-end-install" "tokenless-end-activity" 1 "bb00" Sandbox)
+      _ <- execute connection "UPDATE streak_live_activities SET token_valid=false WHERE schedule_id=?::uuid" (Only schedule.scheduleId)
+      _ <- execute connection "UPDATE notification_jobs SET job_type='end',run_at=now() WHERE schedule_id=?::uuid AND job_type='complete'" (Only schedule.scheduleId)
+
+      processed <- runOnceWith connection (\_ -> expectationFailure "a tokenless end must not reach APNs" >> error "unreachable") "end-worker"
+      processed `shouldBe` 1
+      [Only jobStatus] <- query connection "SELECT status FROM notification_jobs WHERE schedule_id=?::uuid AND job_type='end'" (Only schedule.scheduleId) :: IO [Only Text]
+      jobStatus `shouldBe` "succeeded"
+      [Only scheduleStatus] <- query connection "SELECT status FROM streak_notification_schedules WHERE schedule_id=?::uuid" (Only schedule.scheduleId) :: IO [Only Text]
+      scheduleStatus `shouldBe` "ended"
+
+    it "invalidates a rejected push-to-start token and fails the schedule" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "bad-start" "bad-start@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Sandbox
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "bad-start" "bad-start-install" install)
+      _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "bad-start" "bad-start-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Sandbox)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "bad-start" $ CardPlayedRequest "bad-start-event" "bad-start-install" now)
+      _ <- execute connection "UPDATE notification_jobs SET run_at=now() WHERE schedule_id=?::uuid AND job_type='start'" (Only schedule.scheduleId)
+
+      _ <- runOnceWith connection (\_ -> pure $ APNSResponse 410 (Just "Unregistered") Nothing Nothing) "bad-start-worker"
+
+      [Only tokenCleared] <- query connection "SELECT push_to_start_token IS NULL FROM ios_notification_installations WHERE installation_id='bad-start-install'" () :: IO [Only Bool]
+      tokenCleared `shouldBe` True
+      [Only scheduleStatus] <- query connection "SELECT status FROM streak_notification_schedules WHERE schedule_id=?::uuid" (Only schedule.scheduleId) :: IO [Only Text]
+      scheduleStatus `shouldBe` "failed"
+
+    it "invalidates a rejected activity update token" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "bad-update" "bad-update@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "26.0" "1" "1" True (Just True) Sandbox
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "bad-update" "bad-update-install" install)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "bad-update" $ CardPlayedRequest "bad-update-event" "bad-update-install" now)
+      _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "bad-update" schedule.scheduleId $ ActivityTokenRequest "bad-update-install" "bad-update-activity" 1 "bb00" Sandbox)
+      _ <- execute connection "UPDATE notification_jobs SET run_at=now() WHERE schedule_id=?::uuid AND job_type='complete'" (Only schedule.scheduleId)
+
+      _ <- runOnceWith connection (\_ -> pure $ APNSResponse 400 (Just "BadDeviceToken") Nothing Nothing) "bad-update-worker"
+
+      [Only valid] <- query connection "SELECT token_valid FROM streak_live_activities WHERE schedule_id=?::uuid" (Only schedule.scheduleId) :: IO [Only Bool]
+      valid `shouldBe` False

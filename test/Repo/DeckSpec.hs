@@ -113,6 +113,15 @@ spec = describe "Repo.Deck" $ do
         inserted.color `shouldBe` Just "wh"
         updated.color `shouldBe` Just "wh"
 
+    it "detects an existing deck with the same portable deck id" $ do
+      withCleanDb $ \conn -> do
+        _ <- expectRight =<< runTestApp conn (Repo.User.insert $ mkTestUser "existing-author" "existing-deck@example.com" "password")
+        _ <- expectRight =<< runTestApp conn (execute "INSERT INTO user_deck_views (id,user_id,name,is_public,num_cards_total) VALUES (?,?,?,?,?)" ("existing-author_shared-deck" :: String, "existing-author" :: String, "Existing" :: String, True, 0 :: Integer))
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate $ mkTestDeck 0 "Existing" "existing-author" "existing-author_shared-deck")
+
+        exists <- expectRight =<< runTestApp conn (Repo.Deck.alreadyExists $ mkTestDeck 0 "Imported" "another-author" "another-author_shared-deck")
+        exists `shouldBe` True
+
   describe "search" $ do
     it "returns empty list when query is Nothing" $ do
       withCleanDb $ \conn -> do
@@ -409,6 +418,17 @@ spec = describe "Repo.Deck" $ do
         featuredCardId `shouldBe` Just "promo_card_1"
         rank `shouldBe` Just 3
         video `shouldBe` Just "https://example.com/promo.mp4"
+
+    it "clears featured source and card metadata" $ do
+      withCleanDb $ \conn -> do
+        _ <- expectRight =<< runTestApp conn (Repo.User.insert $ mkTestUser "promo-clear" "promo-clear@example.com" "password")
+        _ <- expectRight =<< runTestApp conn (execute "INSERT INTO user_deck_views (id,user_id,name,is_public,num_cards_total) VALUES (?,?,?,?,?)" ("udv_promo_clear" :: String, "promo-clear" :: String, "Clear Promo" :: String, True, 0 :: Integer))
+        deck <- expectRight =<< runTestApp conn (Repo.Deck.insertOrUpdate $ mkTestDeck 0 "Clear Promo" "promo-clear" "udv_promo_clear")
+        _ <- expectRight =<< runTestApp conn (Repo.Deck.savePromotion "promo-clear" deck.deckId $ DeckPromotionRequest (Just "tiktok") Nothing Nothing (Just 4) Nothing)
+
+        cleared <- expectRight =<< runTestApp conn (Repo.Deck.savePromotion "promo-clear" deck.deckId $ DeckPromotionRequest Nothing Nothing Nothing (Just 8) Nothing)
+        let DeckPromotionResponse _ source card rank _ = cleared
+        (source, card, rank) `shouldBe` (Nothing, Nothing, Just 8)
 
     it "rejects invalid featured source" $ do
       withCleanDb $ \conn -> do

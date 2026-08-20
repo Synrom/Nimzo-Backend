@@ -12,7 +12,11 @@ import Data.Time (getCurrentTime)
 
 import TestHelpers
 import Repo.User
+import qualified Repo.Rank
+import qualified Repo.UserIdentity
 import Models.User
+import Models.Rank (Direction(..), RankQuery(..))
+import Models.UserIdentity (UserIdentity(..))
 import App.Auth (hashWithSalt)
 
 isLeft' :: Either a b -> Bool
@@ -112,6 +116,45 @@ spec = describe "Repo.User" $ do
         found <- expectRight result
 
         found `shouldSatisfy` isNothing
+
+  describe "account lifecycle" $ do
+    it "looks up an email address and changes the password credentials" $ do
+      withCleanDb $ \conn -> do
+        _ <- expectRight =<< runTestApp conn (Repo.User.insert $ mkTestUser "account-user" "account@example.com" "old-password")
+
+        UID email username premium <- expectRight =<< runTestApp conn (Repo.User.getUserID $ UEmail "account@example.com")
+        (email, username, premium) `shouldBe` ("account@example.com", "account-user", False)
+
+        _ <- expectRight =<< runTestApp conn (Repo.User.changePwd "account-user" "replacement-salt" "replacement-hash")
+        Just changed <- expectRight =<< runTestApp conn (Repo.User.findUsername "account-user")
+        (changed.salt, changed.password) `shouldBe` ("replacement-salt", "replacement-hash")
+
+    it "runs the repository deletion workflow and removes the user" $ do
+      withCleanDb $ \conn -> do
+        _ <- expectRight =<< runTestApp conn (Repo.User.insert $ mkTestUser "delete-user" "delete@example.com" "password")
+        _ <- expectRight =<< runTestApp conn (Repo.User.delete "delete-user")
+
+        deleted <- expectRight =<< runTestApp conn (Repo.User.findUsername "delete-user")
+        deleted `shouldBe` Nothing
+
+  describe "rank and social identities" $ do
+    it "lists ranked users in the requested range" $ do
+      withCleanDb $ \conn -> do
+        _ <- expectRight =<< runTestApp conn (Repo.User.insert $ mkTestUser "rank-user" "rank@example.com" "password")
+
+        ranked <- expectRight =<< runTestApp conn (Repo.Rank.listRank $ RankQuery 0 2 Down)
+        [rankedUser | UserXP rankedUser _ _ <- ranked] `shouldContain` ["rank-user"]
+
+    it "finds and lists a stored provider identity" $ do
+      withCleanDb $ \conn -> do
+        _ <- expectRight =<< runTestApp conn (Repo.User.insert $ mkTestUser "identity-user" "identity@example.com" "password")
+        let identity = UserIdentity "identity-user" "google" "subject-1" (Just "identity@example.com") True
+        _ <- expectRight =<< runTestApp conn (Repo.UserIdentity.insertOrUpdate identity)
+
+        found <- expectRight =<< runTestApp conn (Repo.UserIdentity.find "google" "subject-1")
+        fmap (.username) found `shouldBe` Just "identity-user"
+        listed <- expectRight =<< runTestApp conn (Repo.UserIdentity.listByUsername "identity-user")
+        map (.providerSubject) listed `shouldBe` ["subject-1"]
 
   describe "updateXP" $ do
     it "updates user XP based on number of cards" $ do
