@@ -31,6 +31,7 @@ data UpsertIOSInstallationRequest = UpsertIOSInstallationRequest
   , appVersion :: Text
   , buildNumber :: Text
   , liveActivitiesEnabled :: Bool
+  , supportsLocallyScheduledLiveActivities :: Maybe Bool
   , apnsEnvironment :: APNSEnvironment
   } deriving (Eq, Show, Generic)
 instance FromJSON UpsertIOSInstallationRequest

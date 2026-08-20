@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS ios_notification_installations (
   app_version VARCHAR(64) NOT NULL,
   build_number VARCHAR(64) NOT NULL,
   live_activities_enabled BOOLEAN NOT NULL,
+  supports_locally_scheduled_live_activities BOOLEAN NOT NULL DEFAULT FALSE,
   apns_environment VARCHAR(16) NOT NULL CHECK (apns_environment IN ('sandbox', 'production')),
   push_to_start_token BYTEA,
   token_updated_at TIMESTAMPTZ,

@@ -4,7 +4,7 @@
 
 module Routes.StreakNotificationSpec (spec) where
 
-import Data.Aeson (Value(..), encode)
+import Data.Aeson (Value(..), eitherDecode, encode)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import Data.Either (isLeft)
@@ -28,6 +28,12 @@ closeTo expected actual = abs (actual - expected) < 5
 
 spec :: Spec
 spec = do
+  describe "installation request decoding" $ do
+    it "accepts old clients that omit the local scheduling capability" $ do
+      let decoded = eitherDecode "{\"platform\":\"ios\",\"osVersion\":\"18.6\",\"appVersion\":\"1.4.0\",\"buildNumber\":\"82\",\"liveActivitiesEnabled\":true,\"apnsEnvironment\":\"production\"}" :: Either String UpsertIOSInstallationRequest
+      request <- expectRight decoded
+      request.supportsLocallyScheduledLiveActivities `shouldBe` Nothing
+
   describe "ActivityKit token validation" $ do
     it "accepts uppercase hex and rejects malformed or oversized values" $ do
       Notifications.decodeActivityToken "0AFF" `shouldSatisfy` either (const False) (const True)
@@ -60,7 +66,7 @@ spec = do
     it "is idempotent, enforces ownership, and replaces schedules atomically" $ withCleanDb $ \connection -> do
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "streak-a" "a@example.test" "password")
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "streak-b" "b@example.test" "password")
-      let install = UpsertIOSInstallationRequest "ios" "18.6" "1.4.0" "82" True Production
+      let install = UpsertIOSInstallationRequest "ios" "18.6" "1.4.0" "82" True Nothing Production
           startToken = PushToStartTokenRequest "A0ff" "StreakActivityAttributes" Production
       firstInstall <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "streak-a" "install-a" install)
       secondInstall <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "streak-a" "install-a" install)
@@ -78,6 +84,8 @@ spec = do
       duplicate.delivery `shouldBe` ActivityKit
       [Only jobCount] <- query connection "SELECT count(*) FROM notification_jobs WHERE schedule_id=?::uuid" (Only schedule1.scheduleId) :: IO [Only Int]
       jobCount `shouldBe` 2
+      jobTypes <- query connection "SELECT job_type FROM notification_jobs WHERE schedule_id=?::uuid ORDER BY job_type" (Only schedule1.scheduleId) :: IO [Only Text]
+      jobTypes `shouldBe` [Only "complete", Only "start"]
       let event2 = CardPlayedRequest "event-2" "install-a" now
       schedule2 <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "streak-a" event2)
       schedule2.generation `shouldBe` 2
@@ -86,9 +94,39 @@ spec = do
       outOfOrder <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "streak-a" (CardPlayedRequest "event-old" "install-a" (addUTCTime (-20) now)))
       outOfOrder.scheduleId `shouldBe` schedule2.scheduleId
 
+    it "updates local scheduling support in place and omits only the start job when enabled" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "local-schedule" "local@example.test" "password")
+      let unsupported = UpsertIOSInstallationRequest "ios" "26.0" "2" "100" True (Just False) Production
+          supported = UpsertIOSInstallationRequest "ios" "26.0" "2" "101" True (Just True) Production
+      first <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "local-schedule" "stable-install" unsupported)
+      second <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "local-schedule" "stable-install" supported)
+      second.installationId `shouldBe` first.installationId
+      [Only capability] <- query connection "SELECT supports_locally_scheduled_live_activities FROM ios_notification_installations WHERE installation_id='stable-install'" () :: IO [Only Bool]
+      capability `shouldBe` True
+      now <- getCurrentTime
+      response <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "local-schedule" $ CardPlayedRequest "local-event" "stable-install" now)
+      response.delivery `shouldBe` ActivityKit
+      response.requiresLocalFallback `shouldBe` False
+      jobTypes <- query connection "SELECT job_type FROM notification_jobs WHERE schedule_id=?::uuid ORDER BY job_type" (Only response.scheduleId) :: IO [Only Text]
+      jobTypes `shouldBe` [Only "complete"]
+
+    it "keeps the legacy start, complete, and end job flow when capability is missing" $ withCleanDb $ \connection -> do
+      _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "legacy-flow" "legacy@example.test" "password")
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Production
+      _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "legacy-flow" "legacy-install" install)
+      _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "legacy-flow" "legacy-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Production)
+      now <- getCurrentTime
+      schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "legacy-flow" $ CardPlayedRequest "legacy-event" "legacy-install" now)
+      _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "legacy-flow" schedule.scheduleId $ ActivityTokenRequest "legacy-install" "legacy-activity" 1 "bb00" Production)
+      _ <- execute connection "UPDATE notification_jobs SET run_at=now() WHERE schedule_id=?::uuid AND job_type='complete'" (Only schedule.scheduleId)
+      delivered <- runOnceWith connection (\_ -> pure $ APNSResponse 200 Nothing (Just "legacy-complete") Nothing) "legacy-worker"
+      delivered `shouldBe` 1
+      jobTypes <- query connection "SELECT job_type FROM notification_jobs WHERE schedule_id=?::uuid ORDER BY job_type" (Only schedule.scheduleId) :: IO [Only Text]
+      jobTypes `shouldBe` [Only "complete", Only "end", Only "start"]
+
     it "selects local fallback for iOS 17.1 and when Live Activities are disabled" $ withCleanDb $ \connection -> do
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "fallback" "fallback@example.test" "password")
-      let oldIOS = UpsertIOSInstallationRequest "ios" "17.1" "1" "1" True Sandbox
+      let oldIOS = UpsertIOSInstallationRequest "ios" "17.1" "1" "1" True Nothing Sandbox
           token = PushToStartTokenRequest "00aa" "StreakActivityAttributes" Sandbox
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "fallback" "fallback-install" oldIOS)
       _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "fallback" "fallback-install" token)
@@ -101,8 +139,8 @@ spec = do
 
     it "schedules short debug offsets for sandbox installations and the real offsets for production" $ withCleanDb $ \connection -> do
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "timing" "timing@example.test" "password")
-      let sandboxInstall = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Sandbox
-          productionInstall = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Production
+      let sandboxInstall = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Sandbox
+          productionInstall = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Production
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "timing" "timing-sandbox" sandboxInstall)
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "timing" "timing-production" productionInstall)
       now <- getCurrentTime
@@ -112,14 +150,14 @@ spec = do
         "SELECT starts_at,completes_at FROM streak_notification_schedules WHERE installation_id='timing-sandbox'" () :: IO [(UTCTime, UTCTime)]
       [(productionStarts, productionCompletes)] <- query connection
         "SELECT starts_at,completes_at FROM streak_notification_schedules WHERE installation_id='timing-production'" () :: IO [(UTCTime, UTCTime)]
-      diffUTCTime sandboxStarts now `shouldSatisfy` closeTo 40
-      diffUTCTime sandboxCompletes now `shouldSatisfy` closeTo 60
+      diffUTCTime sandboxStarts now `shouldSatisfy` closeTo 15
+      diffUTCTime sandboxCompletes now `shouldSatisfy` closeTo 25
       diffUTCTime productionStarts now `shouldSatisfy` closeTo (47 * 60 * 60)
       diffUTCTime productionCompletes now `shouldSatisfy` closeTo (48 * 60 * 60)
 
     it "fans a card event out to all of the user's eligible installations" $ withCleanDb $ \connection -> do
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "multi-device" "multi@example.test" "password")
-      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Production
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Production
           token = PushToStartTokenRequest "00aa" "StreakActivityAttributes" Production
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "multi-device" "multi-a" install)
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "multi-device" "multi-b" install)
@@ -135,21 +173,22 @@ spec = do
 
     it "wakes an overdue completion when the activity update token arrives" $ withCleanDb $ \connection -> do
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "late-token" "late@example.test" "password")
-      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Production
+      let install = UpsertIOSInstallationRequest "ios" "26.0" "1" "1" True (Just True) Production
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "late-token" "late-install" install)
-      _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "late-token" "late-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Production)
       now <- getCurrentTime
       schedule <- expectRight =<< runTestApp connection (Notifications.recordCardPlayed "late-token" $ CardPlayedRequest "late-1" "late-install" now)
       _ <- execute connection "UPDATE streak_notification_schedules SET completes_at=now()-interval '1 minute',starts_at=now()-interval '2 minutes' WHERE schedule_id=?::uuid" (Only schedule.scheduleId)
       _ <- execute connection "UPDATE notification_jobs SET status='retry',next_attempt_at=now()+interval '1 hour' WHERE schedule_id=?::uuid AND job_type='complete'" (Only schedule.scheduleId)
       _ <- expectRight =<< runTestApp connection (Notifications.putActivityToken "late-token" schedule.scheduleId $ ActivityTokenRequest "late-install" "activity-1" 1 "bb00" Production)
+      [Only activityCount] <- query connection "SELECT count(*) FROM streak_live_activities WHERE schedule_id=?::uuid AND token_valid" (Only schedule.scheduleId) :: IO [Only Int]
+      activityCount `shouldBe` 1
       [(status, due)] <- query connection "SELECT status,COALESCE(next_attempt_at,run_at)<=now() FROM notification_jobs WHERE schedule_id=?::uuid AND job_type='complete'" (Only schedule.scheduleId) :: IO [(Text, Bool)]
       status `shouldBe` "pending"
       due `shouldBe` True
 
     it "claims a due start once, routes it to the installation token, and advances state on APNs 200" $ withCleanDb $ \connection -> do
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "worker-ok" "worker-ok@example.test" "password")
-      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Sandbox
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Sandbox
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "worker-ok" "worker-install" install)
       _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "worker-ok" "worker-install" $ PushToStartTokenRequest "00aa" "StreakActivityAttributes" Sandbox)
       now <- getCurrentTime
@@ -171,7 +210,7 @@ spec = do
 
     it "retries transient APNs failures without advancing the schedule" $ withCleanDb $ \connection -> do
       _ <- expectRight =<< runTestApp connection (Users.insert $ mkTestUser "worker-retry" "worker-retry@example.test" "password")
-      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Production
+      let install = UpsertIOSInstallationRequest "ios" "18.0" "1" "1" True Nothing Production
       _ <- expectRight =<< runTestApp connection (Notifications.upsertInstallation "worker-retry" "retry-install" install)
       _ <- expectRight =<< runTestApp connection (Notifications.putPushToStartToken "worker-retry" "retry-install" $ PushToStartTokenRequest "aa00" "StreakActivityAttributes" Production)
       now <- getCurrentTime

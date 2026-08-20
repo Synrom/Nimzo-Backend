@@ -76,6 +76,7 @@ cleanTestDb conn = do
 ensureTestSchema :: Connection -> IO ()
 ensureTestSchema conn = do
   applySqlFile conn "initdb/23_streak_live_activity_notifications.sql"
+  applySqlFile conn "initdb/24_locally_scheduled_live_activities.sql"
   _ <- execute_ conn
     "CREATE TABLE IF NOT EXISTS android_emails (\
     \ id SERIAL PRIMARY KEY,\

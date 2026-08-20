@@ -20,7 +20,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Char (digitToInt, isHexDigit, isDigit)
 import Data.Int (Int64)
-import Data.Maybe (isJust)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time
@@ -31,9 +31,9 @@ import Models.StreakNotification
 import Repo.Classes
 import App.Error (AppError(..))
 
-data InstallationRow = InstallationRow Text Text Bool APNSEnvironment (Maybe ByteString)
+data InstallationRow = InstallationRow Text Text Bool Bool APNSEnvironment (Maybe ByteString)
 instance FromRow InstallationRow where
-  fromRow = InstallationRow <$> field <*> field <*> field <*> (parseEnvironment <$> field) <*> (fmap fromBinary <$> field)
+  fromRow = InstallationRow <$> field <*> field <*> field <*> field <*> (parseEnvironment <$> field) <*> (fmap fromBinary <$> field)
     where fromBinary (Binary bytes) = bytes
 
 data ScheduleRow = ScheduleRow Text Integer UTCTime UTCTime UTCTime Text
@@ -84,8 +84,8 @@ upsertInstallation username installationId request = withTransaction $ do
       pure ()
     _ -> pure ()
   _ <- execute
-    "INSERT INTO ios_notification_installations (installation_id,username,os_version,app_version,build_number,live_activities_enabled,apns_environment,last_seen_at) VALUES (?,?,?,?,?,?,?,now()) ON CONFLICT (installation_id) DO UPDATE SET username=EXCLUDED.username,os_version=EXCLUDED.os_version,app_version=EXCLUDED.app_version,build_number=EXCLUDED.build_number,live_activities_enabled=EXCLUDED.live_activities_enabled,apns_environment=EXCLUDED.apns_environment,last_seen_at=now(),updated_at=now(),deleted_at=NULL,push_to_start_token=CASE WHEN ios_notification_installations.username=EXCLUDED.username AND ios_notification_installations.apns_environment=EXCLUDED.apns_environment THEN ios_notification_installations.push_to_start_token ELSE NULL END,token_updated_at=CASE WHEN ios_notification_installations.username=EXCLUDED.username AND ios_notification_installations.apns_environment=EXCLUDED.apns_environment THEN ios_notification_installations.token_updated_at ELSE NULL END"
-    (installationId, username, request.osVersion, request.appVersion, request.buildNumber, request.liveActivitiesEnabled, environmentText request.apnsEnvironment)
+    "INSERT INTO ios_notification_installations (installation_id,username,os_version,app_version,build_number,live_activities_enabled,supports_locally_scheduled_live_activities,apns_environment,last_seen_at) VALUES (?,?,?,?,?,?,?,?,now()) ON CONFLICT (installation_id) DO UPDATE SET username=EXCLUDED.username,os_version=EXCLUDED.os_version,app_version=EXCLUDED.app_version,build_number=EXCLUDED.build_number,live_activities_enabled=EXCLUDED.live_activities_enabled,supports_locally_scheduled_live_activities=EXCLUDED.supports_locally_scheduled_live_activities,apns_environment=EXCLUDED.apns_environment,last_seen_at=now(),updated_at=now(),deleted_at=NULL,push_to_start_token=CASE WHEN ios_notification_installations.username=EXCLUDED.username AND ios_notification_installations.apns_environment=EXCLUDED.apns_environment THEN ios_notification_installations.push_to_start_token ELSE NULL END,token_updated_at=CASE WHEN ios_notification_installations.username=EXCLUDED.username AND ios_notification_installations.apns_environment=EXCLUDED.apns_environment THEN ios_notification_installations.token_updated_at ELSE NULL END"
+    (installationId, username, request.osVersion, request.appVersion, request.buildNumber, request.liveActivitiesEnabled, fromMaybe False request.supportsLocallyScheduledLiveActivities, environmentText request.apnsEnvironment)
   unless request.liveActivitiesEnabled $ do
     _ <- execute "UPDATE notification_jobs SET status='cancelled',updated_at=now() WHERE installation_id=? AND status IN ('pending','retry','running')" (Only installationId)
     _ <- execute "UPDATE streak_notification_schedules SET status='superseded',updated_at=now() WHERE installation_id=? AND status IN ('scheduled','starting','active','complete','ending')" (Only installationId)
@@ -113,7 +113,11 @@ scheduleResponse installation (ScheduleRow sid gen played starts completes _) =
        (if eligible then ActivityKit else LocalNotifications) (not eligible)
 
 installationEligible :: InstallationRow -> Bool
-installationEligible (InstallationRow _ os enabled _ token) = enabled && isJust token && iosAtLeast172 os
+installationEligible (InstallationRow _ os enabled locallyScheduled _ token) =
+  enabled && (locallyScheduled || isJust token) && iosAtLeast172 os
+
+supportsLocalScheduling :: InstallationRow -> Bool
+supportsLocalScheduling (InstallationRow _ _ _ supported _ _) = supported
 
 iosAtLeast172 :: Text -> Bool
 iosAtLeast172 raw = case map readNumber (take 2 (T.splitOn "." raw)) of
@@ -128,7 +132,7 @@ findInstallation :: MonadDB m => String -> Text -> Bool -> m InstallationRow
 findInstallation username installationId lock = do
   let suffix = if lock then " FOR UPDATE" else ""
   rows <- runQuery
-    ("SELECT installation_id,os_version,live_activities_enabled,apns_environment,push_to_start_token FROM ios_notification_installations WHERE installation_id=? AND username=? AND deleted_at IS NULL" <> suffix)
+    ("SELECT installation_id,os_version,live_activities_enabled,supports_locally_scheduled_live_activities,apns_environment,push_to_start_token FROM ios_notification_installations WHERE installation_id=? AND username=? AND deleted_at IS NULL" <> suffix)
     (installationId, username)
   case rows of
     row : _ -> pure row
@@ -173,8 +177,8 @@ recordCardPlayed username request = withTransaction $ do
       _ <- execute
         "INSERT INTO notification_jobs (schedule_id,installation_id,generation,job_type,run_at,status,target_token,target_environment,immediate_dismissal) SELECT s.schedule_id,s.installation_id,s.generation,'end',now(),'pending',a.update_token,a.apns_environment,true FROM streak_notification_schedules s JOIN streak_live_activities a ON a.schedule_id=s.schedule_id WHERE s.username=? AND s.status='superseded' AND a.token_valid ON CONFLICT (schedule_id,job_type) DO UPDATE SET status='pending',run_at=now(),target_token=EXCLUDED.target_token,target_environment=EXCLUDED.target_environment,immediate_dismissal=true,updated_at=now()"
         (Only username)
-      installations <- runQuery "SELECT installation_id,os_version,live_activities_enabled,apns_environment,push_to_start_token FROM ios_notification_installations WHERE username=? AND deleted_at IS NULL" (Only username)
-      created <- forM installations $ \target@(InstallationRow targetId _ _ targetEnvironment _) -> do
+      installations <- runQuery "SELECT installation_id,os_version,live_activities_enabled,supports_locally_scheduled_live_activities,apns_environment,push_to_start_token FROM ios_notification_installations WHERE username=? AND deleted_at IS NULL" (Only username)
+      created <- forM installations $ \target@(InstallationRow targetId _ _ _ targetEnvironment _) -> do
         let (starts, completes) = scheduleTimes targetEnvironment request.playedAt
         inserted <- runQuery
           "INSERT INTO streak_notification_schedules (username,installation_id,event_id,generation,last_played_at,starts_at,completes_at,status) VALUES (?,?,?,?,?,?,?,'scheduled') RETURNING schedule_id::text,generation,last_played_at,starts_at,completes_at,status"
@@ -182,9 +186,14 @@ recordCardPlayed username request = withTransaction $ do
         schedule <- case inserted of row : _ -> pure row; _ -> Control.Monad.Except.throwError (Internal "Failed to create streak schedule.")
         when (installationEligible target) $ do
           let ScheduleRow sid _ _ _ _ _ = schedule
+          unless (supportsLocalScheduling target) $ do
+            _ <- execute
+              "INSERT INTO notification_jobs (schedule_id,installation_id,generation,job_type,run_at) VALUES (?::uuid,?,?,'start',?)"
+              (sid, targetId, generation, starts)
+            pure ()
           _ <- execute
-            "INSERT INTO notification_jobs (schedule_id,installation_id,generation,job_type,run_at) VALUES (?::uuid,?,?,'start',?),(?::uuid,?,?,'complete',?)"
-            (sid, targetId, generation, starts, sid, targetId, generation, completes)
+            "INSERT INTO notification_jobs (schedule_id,installation_id,generation,job_type,run_at) VALUES (?::uuid,?,?,'complete',?)"
+            (sid, targetId, generation, completes)
           pure ()
         pure (targetId, schedule)
       schedule <- case [row | (targetId, row) <- created, targetId == request.installationId] of
