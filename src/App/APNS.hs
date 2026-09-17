@@ -96,7 +96,8 @@ runOpenSSL keyPath input = do
 
 ecdsaDERToRaw :: BS.ByteString -> Either String BS.ByteString
 ecdsaDERToRaw bytes = do
-  (_, sequenceBody) <- takeTLV 0x30 bytes
+  (sequenceBody, sequenceTrailing) <- takeTLV 0x30 bytes
+  when (not (BS.null sequenceTrailing)) (Left "Unexpected bytes after ECDSA signature")
   (r, remaining) <- takeTLV 0x02 sequenceBody
   (s, trailing) <- takeTLV 0x02 remaining
   when (not (BS.null trailing)) (Left "Unexpected bytes in ECDSA signature")

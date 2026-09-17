@@ -43,7 +43,7 @@ listFeatured maybeSource maybeLimit = do
       \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id \
       \WHERE d.is_public = TRUE \
       \AND d.featured_source = ? \
-      \ORDER BY d.created_at DESC, COALESCE(d.featured_rank, 2147483647) ASC, d.download_count DESC, d.rating_avg DESC NULLS LAST, d.name ASC \
+      \ORDER BY COALESCE(d.featured_rank, 2147483647) ASC, d.created_at DESC, d.download_count DESC, d.rating_avg DESC NULLS LAST, d.name ASC \
       \LIMIT ?"
 
 savePromotion :: MonadDB m => String -> Integer -> DeckPromotionRequest -> m DeckPromotionResponse
