@@ -54,6 +54,7 @@ spec = do
       json `shouldContain` "\"scheduleId\":\"schedule-id\""
       json `shouldContain` "\"startsAtTimestamp\":1786803151"
       json `shouldContain` "\"input-push-token\":1"
+      json `shouldContain` "\"body\":\"Your streak expires in ...\""
     it "uses update and end events with a final complete state" $ do
       LBS8.unpack (encode $ completePayload now completes) `shouldContain` "\"event\":\"update\""
       LBS8.unpack (encode $ completePayload now completes) `shouldContain` "\"isComplete\":true"

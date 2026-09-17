@@ -17,18 +17,18 @@ import Models.Onboarding (
 
 returnFields :: Query
 returnFields =
-  " user_id, chess_level, elo, organization, motivation, study_goal "
+  " user_id, chess_level, elo, organization, motivation, study_goal, chess_weakness "
 
 upsertForUser :: MonadDB m => String -> OnboardingPreferencesPayload -> m ()
 upsertForUser username payload = do
-  _ <- execute query (username, payload.chess_level, payload.elo, payload.organization, payload.motivation, payload.study_goal)
+  _ <- execute query (username, payload.chess_level, payload.elo, payload.organization, payload.motivation, payload.study_goal, payload.chess_weakness)
   pure ()
   where
     query :: Query
     query =
       "INSERT INTO user_onboarding_preferences \
-      \(user_id, chess_level, elo, organization, motivation, study_goal, heard_about_us) \
-      \VALUES (?, ?, ?, ?, ?, ?, 'Other') \
+      \(user_id, chess_level, elo, organization, motivation, study_goal, chess_weakness, heard_about_us) \
+      \VALUES (?, ?, ?, ?, ?, ?, ?, 'Other') \
       \ON CONFLICT (user_id) \
       \DO UPDATE SET \
       \ chess_level = EXCLUDED.chess_level, \
@@ -36,6 +36,7 @@ upsertForUser username payload = do
       \ organization = EXCLUDED.organization, \
       \ motivation = EXCLUDED.motivation, \
       \ study_goal = EXCLUDED.study_goal, \
+      \ chess_weakness = COALESCE(EXCLUDED.chess_weakness, user_onboarding_preferences.chess_weakness), \
       \ heard_about_us = COALESCE(user_onboarding_preferences.heard_about_us, EXCLUDED.heard_about_us), \
       \ last_modified = CURRENT_TIMESTAMP"
 
@@ -48,7 +49,7 @@ findByUser username = listToMaybe <$> runQuery query (Only username)
 
 anonymousReturnFields :: Query
 anonymousReturnFields =
-  " onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal, platform, claimed_by_user "
+  " onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal, platform, chess_weakness, claimed_by_user "
 
 upsertAnonymousProgress :: MonadDB m => AnonymousOnboardingProgressPayload -> m ()
 upsertAnonymousProgress payload = do
@@ -61,15 +62,16 @@ upsertAnonymousProgress payload = do
       payload.organization,
       payload.motivation,
       payload.study_goal,
-      payload.platform
+      payload.platform,
+      payload.chess_weakness
     )
   pure ()
   where
     query :: Query
     query =
       "INSERT INTO anonymous_onboarding_progress \
-      \(onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal, platform) \
-      \VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+      \(onboarding_session_id, last_step, stopped, chess_level, elo, organization, motivation, study_goal, platform, chess_weakness) \
+      \VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
       \ON CONFLICT (onboarding_session_id) \
       \DO UPDATE SET \
       \ last_step = EXCLUDED.last_step, \
@@ -80,6 +82,7 @@ upsertAnonymousProgress payload = do
       \ motivation = COALESCE(EXCLUDED.motivation, anonymous_onboarding_progress.motivation), \
       \ study_goal = COALESCE(EXCLUDED.study_goal, anonymous_onboarding_progress.study_goal), \
       \ platform = COALESCE(EXCLUDED.platform, anonymous_onboarding_progress.platform), \
+      \ chess_weakness = COALESCE(EXCLUDED.chess_weakness, anonymous_onboarding_progress.chess_weakness), \
       \ last_modified = CURRENT_TIMESTAMP"
 
 findAnonymousBySession :: MonadDB m => String -> m (Maybe AnonymousOnboardingProgress)
@@ -103,15 +106,16 @@ claimAnonymousForUser username sessionId = do
       \  SET claimed_by_user = ?, last_modified = CURRENT_TIMESTAMP \
       \  WHERE onboarding_session_id = ? \
       \    AND (claimed_by_user IS NULL OR claimed_by_user = ?) \
-      \  RETURNING chess_level, elo, organization, motivation, study_goal \
+      \  RETURNING chess_level, elo, organization, motivation, study_goal, chess_weakness \
       \) \
-      \INSERT INTO user_onboarding_preferences (user_id, chess_level, elo, organization, motivation, study_goal, heard_about_us) \
+      \INSERT INTO user_onboarding_preferences (user_id, chess_level, elo, organization, motivation, study_goal, chess_weakness, heard_about_us) \
       \SELECT ?, \
       \  COALESCE(chess_level, ''), \
       \  COALESCE(elo, ''), \
       \  COALESCE(organization, ''), \
       \  COALESCE(motivation, ''), \
       \  COALESCE(study_goal, ''), \
+      \  chess_weakness, \
       \  'Other' \
       \FROM claimed \
       \ON CONFLICT (user_id) \
@@ -121,6 +125,7 @@ claimAnonymousForUser username sessionId = do
       \ organization = EXCLUDED.organization, \
       \ motivation = EXCLUDED.motivation, \
       \ study_goal = EXCLUDED.study_goal, \
+      \ chess_weakness = COALESCE(EXCLUDED.chess_weakness, user_onboarding_preferences.chess_weakness), \
       \ heard_about_us = COALESCE(user_onboarding_preferences.heard_about_us, EXCLUDED.heard_about_us), \
       \ last_modified = CURRENT_TIMESTAMP \
       \RETURNING 1"

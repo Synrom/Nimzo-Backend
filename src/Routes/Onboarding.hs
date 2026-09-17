@@ -28,7 +28,8 @@ import Models.Onboarding (
   sessionIdMaxLength,
   lastStepMaxLength,
   onboardingShortFieldMaxLength,
-  motivationMaxLength
+  motivationMaxLength,
+  chessWeaknessMaxLength
   )
 import qualified Repo.Onboarding as OnboardingRepo
 import Repo.Utils (orThrow, ensure)
@@ -88,6 +89,7 @@ validateAnonymousPayload payload = do
           payload.motivation
           payload.study_goal
           payload.platform
+          payload.chess_weakness
 
   ensure invalidOnboardingSession (not (null normalizedPayload.onboarding_session_id))
   ensure invalidOnboardingStep (not (null normalizedPayload.last_step))
@@ -98,6 +100,7 @@ validateAnonymousPayload payload = do
   ensureOptionalLength onboardingShortFieldMaxLength normalizedPayload.organization invalidOnboardingPayload
   ensureOptionalLength motivationMaxLength normalizedPayload.motivation invalidOnboardingPayload
   ensureOptionalLength onboardingShortFieldMaxLength normalizedPayload.study_goal invalidOnboardingPayload
+  ensureOptionalLength chessWeaknessMaxLength normalizedPayload.chess_weakness invalidOnboardingPayload
   ensureOptionalPlatform normalizedPayload.platform
   pure normalizedPayload
 
@@ -108,6 +111,7 @@ validateUserOnboardingPayload payload = do
   ensureLength onboardingShortFieldMaxLength payload.organization invalidOnboardingPayload
   ensureLength motivationMaxLength payload.motivation invalidOnboardingPayload
   ensureLength onboardingShortFieldMaxLength payload.study_goal invalidOnboardingPayload
+  ensureOptionalLength chessWeaknessMaxLength payload.chess_weakness invalidOnboardingPayload
   pure payload
 
 saveOnboardingPreferences :: String -> OnboardingPreferencesPayload -> AppM JsonableMsg

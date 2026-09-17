@@ -107,7 +107,7 @@ spec = describe "Routes.Auth" $ do
     it "claims anonymous onboarding during signup when onboarding_session_id is provided" $ do
       withCleanDb $ \conn -> do
         let sessionId = "signup-claim-session-1"
-        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a habit") (Just "0-5 mins") Nothing
+        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a habit") (Just "0-5 mins") Nothing Nothing
         _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress anonPayload
 
         let user = mkTestUser "signup-claim-user" "signup-claim@example.com" "password"
@@ -246,6 +246,13 @@ spec = describe "Routes.Auth" $ do
       payload <- expectRight decoded
       payload.platform `shouldBe` Nothing
 
+    it "decodes legacy anonymous onboarding progress JSON without chess_weakness" $ do
+      let decoded =
+            eitherDecode "{\"onboarding_session_id\":\"anon-session-legacy-json-2\",\"last_step\":\"elo\",\"stopped\":false}" ::
+              Either String AnonymousOnboardingProgressPayload
+      payload <- expectRight decoded
+      payload.chess_weakness `shouldBe` Nothing
+
     it "stores and reads anonymous onboarding progress by session id" $ do
       withCleanDb $ \conn -> do
         let payload =
@@ -259,6 +266,7 @@ spec = describe "Routes.Auth" $ do
                 Nothing
                 Nothing
                 (Just "ios")
+                (Just "Openings")
         saveResult <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
         Msg message <- expectRight saveResult
         message `shouldBe` "Successfully saved anonymous onboarding progress."
@@ -271,6 +279,7 @@ spec = describe "Routes.Auth" $ do
         progress.elo `shouldBe` Just "0-800"
         progress.organization `shouldBe` Just "Lichess"
         progress.platform `shouldBe` Just "ios"
+        progress.chess_weakness `shouldBe` Just "Openings"
         progress.claimed_by_user `shouldBe` Nothing
 
     it "accepts anonymous onboarding progress without platform for backwards compatibility" $ do
@@ -286,12 +295,34 @@ spec = describe "Routes.Auth" $ do
                 Nothing
                 Nothing
                 Nothing
+                Nothing
         saveResult <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
         Msg message <- expectRight saveResult
         message `shouldBe` "Successfully saved anonymous onboarding progress."
 
         progress <- expectRight =<< runTestApp conn (OnboardingRoutes.getAnonymousOnboardingProgress "anon-session-backcompat-1")
         progress.platform `shouldBe` Nothing
+
+    it "accepts anonymous onboarding progress without chess_weakness for backwards compatibility" $ do
+      withCleanDb $ \conn -> do
+        let payload =
+              AnonymousOnboardingProgressPayload
+                "anon-session-backcompat-2"
+                "elo"
+                False
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+        saveResult <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
+        Msg message <- expectRight saveResult
+        message `shouldBe` "Successfully saved anonymous onboarding progress."
+
+        progress <- expectRight =<< runTestApp conn (OnboardingRoutes.getAnonymousOnboardingProgress "anon-session-backcompat-2")
+        progress.chess_weakness `shouldBe` Nothing
 
     it "rejects unsupported anonymous onboarding platforms" $ do
       withCleanDb $ \conn -> do
@@ -306,6 +337,24 @@ spec = describe "Routes.Auth" $ do
                 Nothing
                 Nothing
                 (Just "web")
+                Nothing
+        result <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
+        result `shouldSatisfy` isLeft'
+
+    it "rejects anonymous onboarding chess_weakness longer than the max length" $ do
+      withCleanDb $ \conn -> do
+        let payload =
+              AnonymousOnboardingProgressPayload
+                "anon-session-weakness-too-long-1"
+                "elo"
+                False
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                Nothing
+                (Just (replicate 251 'x'))
         result <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress payload
         result `shouldSatisfy` isLeft'
 

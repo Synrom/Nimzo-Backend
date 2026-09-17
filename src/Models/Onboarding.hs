@@ -19,12 +19,16 @@ onboardingShortFieldMaxLength = 50
 motivationMaxLength :: Int
 motivationMaxLength = 250
 
+chessWeaknessMaxLength :: Int
+chessWeaknessMaxLength = 250
+
 data OnboardingPreferencesPayload = OnboardingPreferencesPayload
   { chess_level :: String,
     elo :: String,
     organization :: String,
     motivation :: String,
-    study_goal :: String
+    study_goal :: String,
+    chess_weakness :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
@@ -37,7 +41,8 @@ data OnboardingPreferences = OnboardingPreferences
     elo :: String,
     organization :: String,
     motivation :: String,
-    study_goal :: String
+    study_goal :: String,
+    chess_weakness :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
@@ -54,7 +59,8 @@ data AnonymousOnboardingProgressPayload = AnonymousOnboardingProgressPayload
     organization :: Maybe String,
     motivation :: Maybe String,
     study_goal :: Maybe String,
-    platform :: Maybe String
+    platform :: Maybe String,
+    chess_weakness :: Maybe String
   }
   deriving (Eq, Show, Generic)
 
@@ -71,6 +77,7 @@ data AnonymousOnboardingProgress = AnonymousOnboardingProgress
     motivation :: Maybe String,
     study_goal :: Maybe String,
     platform :: Maybe String,
+    chess_weakness :: Maybe String,
     claimed_by_user :: Maybe String
   }
   deriving (Eq, Show, Generic)

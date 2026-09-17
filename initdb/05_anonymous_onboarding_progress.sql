@@ -20,6 +20,9 @@ ALTER TABLE anonymous_onboarding_progress
 ALTER TABLE anonymous_onboarding_progress
   ADD COLUMN IF NOT EXISTS platform VARCHAR(50);
 
+ALTER TABLE anonymous_onboarding_progress
+  ADD COLUMN IF NOT EXISTS chess_weakness VARCHAR(250);
+
 CREATE INDEX IF NOT EXISTS anonymous_onboarding_progress_last_step_idx
   ON anonymous_onboarding_progress(last_step);
 

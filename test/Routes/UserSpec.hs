@@ -67,7 +67,7 @@ spec = describe "Routes.User (secure)" $ do
         let user = mkTestUser "onboard-user" "onboard@example.com" "password"
         _ <- runTestApp conn $ AuthRoutes.createUser user
 
-        let payload = OnboardingPreferencesPayload "beginner" "800-1600" "Lichess" "Learn new openings" "10-20 mins"
+        let payload = OnboardingPreferencesPayload "beginner" "800-1600" "Lichess" "Learn new openings" "10-20 mins" (Just "Endgames")
         result <- runTestApp conn $ OnboardingRoutes.saveOnboardingPreferences "onboard-user" payload
         Msg message <- expectRight result
         message `shouldBe` "Successfully saved onboarding preferences."
@@ -75,34 +75,67 @@ spec = describe "Routes.User (secure)" $ do
         stored <- expectRight =<< runTestApp conn (OnboardingRepo.findByUser "onboard-user")
         case stored of
           Nothing -> expectationFailure "Expected onboarding preferences to be stored"
-          Just (OnboardingPreferences userId chessLevel elo organization motivation studyGoal) -> do
+          Just (OnboardingPreferences userId chessLevel elo organization motivation studyGoal chessWeakness) -> do
             userId `shouldBe` "onboard-user"
             chessLevel `shouldBe` "beginner"
             elo `shouldBe` "800-1600"
             organization `shouldBe` "Lichess"
             motivation `shouldBe` "Learn new openings"
             studyGoal `shouldBe` "10-20 mins"
+            chessWeakness `shouldBe` Just "Endgames"
+
+    it "stores onboarding preferences without chess_weakness for backwards compatibility" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "onboard-user-no-weakness" "onboard-no-weakness@example.com" "password"
+        _ <- runTestApp conn $ AuthRoutes.createUser user
+
+        let payload = OnboardingPreferencesPayload "beginner" "800-1600" "Lichess" "Learn new openings" "10-20 mins" Nothing
+        result <- runTestApp conn $ OnboardingRoutes.saveOnboardingPreferences "onboard-user-no-weakness" payload
+        Msg message <- expectRight result
+        message `shouldBe` "Successfully saved onboarding preferences."
+
+        stored <- expectRight =<< runTestApp conn (OnboardingRepo.findByUser "onboard-user-no-weakness")
+        case stored of
+          Nothing -> expectationFailure "Expected onboarding preferences to be stored"
+          Just (OnboardingPreferences _ _ _ _ _ _ chessWeakness) -> chessWeakness `shouldBe` Nothing
 
     it "upserts onboarding preferences when called multiple times" $ do
       withCleanDb $ \conn -> do
         let user = mkTestUser "onboard-upsert" "onboard-upsert@example.com" "password"
         _ <- runTestApp conn $ AuthRoutes.createUser user
 
-        let firstPayload = OnboardingPreferencesPayload "beginner" "0-800" "Chess.com" "Get better quickly" "0-5 mins"
+        let firstPayload = OnboardingPreferencesPayload "beginner" "0-800" "Chess.com" "Get better quickly" "0-5 mins" (Just "Time management")
         _ <- runTestApp conn $ OnboardingRoutes.saveOnboardingPreferences "onboard-upsert" firstPayload
 
-        let updatedPayload = OnboardingPreferencesPayload "advanced" "2000+" "Fide" "Prepare for tournament" "20+ mins"
+        let updatedPayload = OnboardingPreferencesPayload "advanced" "2000+" "Fide" "Prepare for tournament" "20+ mins" (Just "Calculation")
         _ <- runTestApp conn $ OnboardingRoutes.saveOnboardingPreferences "onboard-upsert" updatedPayload
 
         stored <- expectRight =<< runTestApp conn (OnboardingRepo.findByUser "onboard-upsert")
         case stored of
           Nothing -> expectationFailure "Expected onboarding preferences to be stored"
-          Just (OnboardingPreferences _ chessLevel elo organization motivation studyGoal) -> do
+          Just (OnboardingPreferences _ chessLevel elo organization motivation studyGoal chessWeakness) -> do
             chessLevel `shouldBe` "advanced"
             elo `shouldBe` "2000+"
             organization `shouldBe` "Fide"
             motivation `shouldBe` "Prepare for tournament"
             studyGoal `shouldBe` "20+ mins"
+            chessWeakness `shouldBe` Just "Calculation"
+
+    it "keeps the previous chess_weakness when an update omits it" $ do
+      withCleanDb $ \conn -> do
+        let user = mkTestUser "onboard-upsert-keep-weakness" "onboard-upsert-keep-weakness@example.com" "password"
+        _ <- runTestApp conn $ AuthRoutes.createUser user
+
+        let firstPayload = OnboardingPreferencesPayload "beginner" "0-800" "Chess.com" "Get better quickly" "0-5 mins" (Just "Time management")
+        _ <- runTestApp conn $ OnboardingRoutes.saveOnboardingPreferences "onboard-upsert-keep-weakness" firstPayload
+
+        let updatedPayload = OnboardingPreferencesPayload "advanced" "2000+" "Fide" "Prepare for tournament" "20+ mins" Nothing
+        _ <- runTestApp conn $ OnboardingRoutes.saveOnboardingPreferences "onboard-upsert-keep-weakness" updatedPayload
+
+        stored <- expectRight =<< runTestApp conn (OnboardingRepo.findByUser "onboard-upsert-keep-weakness")
+        case stored of
+          Nothing -> expectationFailure "Expected onboarding preferences to be stored"
+          Just (OnboardingPreferences _ _ _ _ _ _ chessWeakness) -> chessWeakness `shouldBe` Just "Time management"
 
   describe "claimAnonymousOnboarding" $ do
     it "claims an anonymous session and copies preferences to the user onboarding table" $ do
@@ -111,7 +144,7 @@ spec = describe "Routes.User (secure)" $ do
         _ <- runTestApp conn $ AuthRoutes.createUser user
 
         let sessionId = "anon-session-claim-1"
-        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a study habit") (Just "0-5 mins") Nothing
+        let anonPayload = AnonymousOnboardingProgressPayload sessionId "motivation" True (Just "beginner") (Just "0-800") (Just "Chess.com") (Just "Build a study habit") (Just "0-5 mins") Nothing (Just "Blunders")
         _ <- runTestApp conn $ OnboardingRoutes.saveAnonymousOnboardingProgress anonPayload
 
         let claimPayload = ClaimAnonymousOnboardingPayload sessionId
@@ -122,10 +155,11 @@ spec = describe "Routes.User (secure)" $ do
         stored <- expectRight =<< runTestApp conn (OnboardingRepo.findByUser "claim-onboarding-user")
         case stored of
           Nothing -> expectationFailure "Expected claimed onboarding preferences to be stored"
-          Just (OnboardingPreferences userId chessLevel elo organization motivation studyGoal) -> do
+          Just (OnboardingPreferences userId chessLevel elo organization motivation studyGoal chessWeakness) -> do
             userId `shouldBe` "claim-onboarding-user"
             chessLevel `shouldBe` "beginner"
             elo `shouldBe` "0-800"
             organization `shouldBe` "Chess.com"
             motivation `shouldBe` "Build a study habit"
             studyGoal `shouldBe` "0-5 mins"
+            chessWeakness `shouldBe` Just "Blunders"

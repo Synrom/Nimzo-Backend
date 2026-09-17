@@ -581,7 +581,7 @@ Send to the installation's push-to-start token:
     "relevance-score": 100,
     "alert": {
       "title": "Last chance!",
-      "body": "Your streak countdown has started.",
+      "body": "Your streak expires in ...",
       "sound": "default"
     }
   }

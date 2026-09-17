@@ -235,7 +235,7 @@ startPayload now schedule generation starts completes requestInputToken = object
    , "attributes" .= object ["scheduleId" .= schedule, "generation" .= generation, "startsAtTimestamp" .= unixSeconds starts]
    , "stale-date" .= unixSeconds completes
    , "relevance-score" .= (100 :: Int)
-   , "alert" .= object ["title" .= ("Last chance!" :: String), "body" .= ("Your streak countdown has started." :: String), "sound" .= ("default" :: String)]
+   , "alert" .= object ["title" .= ("Last chance!" :: String), "body" .= ("Your streak expires in ..." :: String), "sound" .= ("default" :: String)]
    ] ++ ["input-push-token" .= (1 :: Int) | requestInputToken])]
 
 completePayload :: UTCTime -> UTCTime -> Value

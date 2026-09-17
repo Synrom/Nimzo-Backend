@@ -12,3 +12,6 @@ CREATE TABLE IF NOT EXISTS user_onboarding_preferences (
 
 ALTER TABLE user_onboarding_preferences
   ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50) NOT NULL DEFAULT 'Other';
+
+ALTER TABLE user_onboarding_preferences
+  ADD COLUMN IF NOT EXISTS chess_weakness VARCHAR(250);
