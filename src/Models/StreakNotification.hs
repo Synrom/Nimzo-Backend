@@ -53,8 +53,17 @@ data CardPlayedRequest = CardPlayedRequest
   { eventId :: Text
   , installationId :: Text
   , playedAt :: UTCTime
+  , timingProfile :: Maybe StreakTimingProfile
   } deriving (Eq, Show, Generic)
 instance FromJSON CardPlayedRequest
+
+data StreakTimingProfile = ProductionTiming | AcceleratedPreviewTiming deriving (Eq, Show)
+
+instance FromJSON StreakTimingProfile where
+  parseJSON = withText "streak timing profile" $ \value -> case value of
+    "production" -> pure ProductionTiming
+    "accelerated-preview" -> pure AcceleratedPreviewTiming
+    _ -> fail "timingProfile must be production or accelerated-preview"
 
 data Delivery = ActivityKit | LocalNotifications deriving (Eq, Show)
 instance ToJSON Delivery where

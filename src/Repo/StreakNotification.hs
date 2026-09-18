@@ -30,6 +30,7 @@ import Database.PostgreSQL.Simple.Types (Binary(..))
 import Models.StreakNotification
 import Repo.Classes
 import App.Error (AppError(..))
+import App.Env (Env(..))
 
 data InstallationRow = InstallationRow Text Text Bool Bool APNSEnvironment (Maybe ByteString)
 instance FromRow InstallationRow where
@@ -106,15 +107,16 @@ putPushToStartToken username installationId request = withTransaction $ do
   _ <- execute "UPDATE ios_notification_installations SET push_to_start_token=?,token_updated_at=now(),updated_at=now() WHERE installation_id=? AND username=?" (Binary token, installationId, username)
   pure ()
 
-scheduleResponse :: InstallationRow -> ScheduleRow -> StreakScheduleResponse
-scheduleResponse installation (ScheduleRow sid gen played starts completes _) =
-  let eligible = installationEligible installation
+scheduleResponse :: Bool -> InstallationRow -> ScheduleRow -> StreakScheduleResponse
+scheduleResponse serverPushAvailable installation (ScheduleRow sid gen played starts completes status) =
+  let eligible = installationEligible serverPushAvailable installation
+        && status `elem` ["scheduled", "starting", "active", "complete", "ending"]
   in StreakScheduleResponse sid gen played starts completes
        (if eligible then ActivityKit else LocalNotifications) (not eligible)
 
-installationEligible :: InstallationRow -> Bool
-installationEligible (InstallationRow _ os enabled locallyScheduled _ token) =
-  enabled && (locallyScheduled || isJust token) && iosAtLeast172 os
+installationEligible :: Bool -> InstallationRow -> Bool
+installationEligible serverPushAvailable (InstallationRow _ os enabled locallyScheduled _ token) =
+  serverPushAvailable && enabled && (locallyScheduled || isJust token) && iosAtLeast172 os
 
 supportsLocalScheduling :: InstallationRow -> Bool
 supportsLocalScheduling (InstallationRow _ _ _ supported _ _) = supported
@@ -138,17 +140,16 @@ findInstallation username installationId lock = do
     row : _ -> pure row
     _ -> Control.Monad.Except.throwError (NotFound "Installation not found.")
 
-scheduleTimes :: APNSEnvironment -> UTCTime -> (UTCTime, UTCTime)
--- Mirrors the accelerated `__DEV__` offsets in the app's
--- `src/notifications/streak/designs.ts`. The completion has to stay inside
--- iOS's ~30s background execution allowance: a locally scheduled fallback
--- activity can only swap the countdown for its completion presentation by
--- running `Activity.update` itself, and a later endpoint is never reached.
-scheduleTimes Sandbox playedAt = (addUTCTime 15 playedAt, addUTCTime 25 playedAt)
-scheduleTimes Production playedAt = (addUTCTime (47 * 60 * 60) playedAt, addUTCTime (48 * 60 * 60) playedAt)
+scheduleTimes :: Maybe StreakTimingProfile -> UTCTime -> (UTCTime, UTCTime)
+scheduleTimes (Just AcceleratedPreviewTiming) playedAt =
+  (addUTCTime 15 playedAt, addUTCTime 25 playedAt)
+scheduleTimes _ playedAt =
+  (addUTCTime (47 * 60 * 60) playedAt, addUTCTime (48 * 60 * 60) playedAt)
 
 recordCardPlayed :: MonadDB m => String -> CardPlayedRequest -> m StreakScheduleResponse
 recordCardPlayed username request = withTransaction $ do
+  env <- askEnv
+  let serverPushAvailable = isJust env.apnsConfig
   ensure (not (T.null request.eventId) && T.length request.eventId <= 128) (BadRequest "Invalid eventId.")
   now <- liftIO getCurrentTime
   ensure (request.playedAt <= addUTCTime 300 now) (BadRequest "playedAt is too far in the future.")
@@ -158,17 +159,20 @@ recordCardPlayed username request = withTransaction $ do
     "SELECT schedule_id::text,generation,last_played_at,starts_at,completes_at,status FROM streak_notification_schedules WHERE username=? AND event_id=? AND installation_id=?"
     (username, request.eventId, request.installationId)
   case duplicates of
-    existing : _ -> pure (scheduleResponse installation existing)
+    existing : _ -> do
+      ensureNotificationJobs serverPushAvailable installation existing
+      pure (scheduleResponse serverPushAvailable installation existing)
     [] -> do
       current <- runQuery
         "SELECT schedule_id::text,generation,last_played_at,starts_at,completes_at,status FROM streak_notification_schedules WHERE username=? AND installation_id=? ORDER BY generation DESC LIMIT 1 FOR UPDATE"
         (username, request.installationId)
       case current of
         existing@(ScheduleRow _ _ lastPlayed _ _ _) : _ | request.playedAt <= lastPlayed ->
-          pure (scheduleResponse installation existing)
-        _ -> createSchedule installation current now
+          ensureNotificationJobs serverPushAvailable installation existing
+            >> pure (scheduleResponse serverPushAvailable installation existing)
+        _ -> createSchedule serverPushAvailable installation current now
   where
-    createSchedule installation _ _ = do
+    createSchedule serverPushAvailable installation _ _ = do
       generations <- runQuery "SELECT COALESCE(MAX(generation),0) FROM streak_notification_schedules WHERE username=?" (Only username) :: MonadDB m => m [Only Integer]
       let oldGeneration = case generations of Only value : _ -> value; _ -> 0
           generation = oldGeneration + 1
@@ -178,13 +182,13 @@ recordCardPlayed username request = withTransaction $ do
         "INSERT INTO notification_jobs (schedule_id,installation_id,generation,job_type,run_at,status,target_token,target_environment,immediate_dismissal) SELECT s.schedule_id,s.installation_id,s.generation,'end',now(),'pending',a.update_token,a.apns_environment,true FROM streak_notification_schedules s JOIN streak_live_activities a ON a.schedule_id=s.schedule_id WHERE s.username=? AND s.status='superseded' AND a.token_valid ON CONFLICT (schedule_id,job_type) DO UPDATE SET status='pending',run_at=now(),target_token=EXCLUDED.target_token,target_environment=EXCLUDED.target_environment,immediate_dismissal=true,updated_at=now()"
         (Only username)
       installations <- runQuery "SELECT installation_id,os_version,live_activities_enabled,supports_locally_scheduled_live_activities,apns_environment,push_to_start_token FROM ios_notification_installations WHERE username=? AND deleted_at IS NULL" (Only username)
-      created <- forM installations $ \target@(InstallationRow targetId _ _ _ targetEnvironment _) -> do
-        let (starts, completes) = scheduleTimes targetEnvironment request.playedAt
+      created <- forM installations $ \target@(InstallationRow targetId _ _ _ _ _) -> do
+        let (starts, completes) = scheduleTimes request.timingProfile request.playedAt
         inserted <- runQuery
           "INSERT INTO streak_notification_schedules (username,installation_id,event_id,generation,last_played_at,starts_at,completes_at,status) VALUES (?,?,?,?,?,?,?,'scheduled') RETURNING schedule_id::text,generation,last_played_at,starts_at,completes_at,status"
           (username, targetId, request.eventId, generation, request.playedAt, starts, completes)
         schedule <- case inserted of row : _ -> pure row; _ -> Control.Monad.Except.throwError (Internal "Failed to create streak schedule.")
-        when (installationEligible target) $ do
+        when (installationEligible serverPushAvailable target) $ do
           let ScheduleRow sid _ _ _ _ _ = schedule
           unless (supportsLocalScheduling target) $ do
             _ <- execute
@@ -199,7 +203,21 @@ recordCardPlayed username request = withTransaction $ do
       schedule <- case [row | (targetId, row) <- created, targetId == request.installationId] of
         row : _ -> pure row
         _ -> Control.Monad.Except.throwError (Internal "Failed to create calling installation schedule.")
-      pure (scheduleResponse installation schedule)
+      pure (scheduleResponse serverPushAvailable installation schedule)
+
+    ensureNotificationJobs serverPushAvailable installation (ScheduleRow sid gen _ starts completes status) =
+      when (installationEligible serverPushAvailable installation && status `elem` ["scheduled", "starting", "active", "complete", "ending"]) $ do
+        -- A token-backed old local activity is already owned by the completion
+        -- path. Do not start a second activity when that client upgrades.
+        when (not (supportsLocalScheduling installation) && status `elem` ["scheduled", "starting"]) $ do
+          _ <- execute
+            "INSERT INTO notification_jobs (schedule_id,installation_id,generation,job_type,run_at) VALUES (?::uuid,?,?,'start',?) ON CONFLICT (schedule_id,job_type) DO NOTHING"
+            (sid, request.installationId, gen, starts)
+          pure ()
+        _ <- execute
+          "INSERT INTO notification_jobs (schedule_id,installation_id,generation,job_type,run_at) VALUES (?::uuid,?,?,'complete',?) ON CONFLICT (schedule_id,job_type) DO NOTHING"
+          (sid, request.installationId, gen, completes)
+        pure ()
 
 putActivityToken :: MonadDB m => String -> Text -> ActivityTokenRequest -> m ()
 putActivityToken username scheduleId request = withTransaction $ do

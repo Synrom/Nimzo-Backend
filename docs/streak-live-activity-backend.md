@@ -23,6 +23,18 @@ Devices on iOS 17.0 and 17.1 must continue to use scheduled local notifications.
 They cannot receive push-to-start Live Activities. Devices below iOS 16.2 do not
 support Live Activities.
 
+## Current implementation compatibility
+
+Current clients explicitly register `supportsLocallyScheduledLiveActivities:
+false`, including on iOS 26. Legacy clients may send true; they retain their
+local-start/completion-only path. Eligibility also requires configured APNs
+transport. A replay reconciles missing jobs after token upload or capability
+changes, without retrying successful jobs or resurrecting superseded schedules.
+
+Card-play requests accept optional `timingProfile`: `production` (the default)
+uses +47h/+48h; `accelerated-preview` uses +15s/+25s. APNs environment selects
+only the push host, independently of schedule timing.
+
 ## End-to-end protocol
 
 ```text

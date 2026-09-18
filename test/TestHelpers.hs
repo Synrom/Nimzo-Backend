@@ -28,6 +28,7 @@ import Models.Deck (Deck(..))
 import Models.UserDeckView (UserDeckView(..))
 import Models.UserCardView (UserCardView(..))
 import Models.Watermelon (PullParams (..))
+import Models.StreakNotification (APNSEnvironment(Production))
 
 -- | Test database connection string
 -- Use a separate test database to avoid conflicts
@@ -185,6 +186,17 @@ mkTestEnv conn = do
   let mailCfg = Google "testuser" "testpass" "Test User" "test@example.com" "http://localhost/verify" "http://localhost/change" True
   let socialCfg = SocialAuthConfiguration ["test-google-client"] ["test-apple-client"]
   return $ Env conn jwtCfg mailCfg socialCfg "/tmp/nimzo-test-deck-images" "/deck-images" [] Nothing
+
+-- | Streak delivery tests need configured push transport; no actual APNs calls
+-- are made by the repository. Worker tests inject their transport separately.
+runTestAppWithAPNS :: Connection -> AppM a -> IO (Either AppError a)
+runTestAppWithAPNS conn action = do
+  let cfg = APNSConfiguration "test-team" "test-key" "/tmp/test-apns-key.p8" "com.test.nimzo" Production
+  env <- (\configured -> configured { apnsConfig = Just cfg }) <$> mkTestEnv conn
+  result <- runHandler (nt env action)
+  case result of
+    Right val -> return $ Right val
+    Left (e :: ServerError) -> return $ Left $ Internal $ TL.unpack $ TLE.decodeUtf8 $ errBody e
 
 -- | Run an AppM action in a test environment
 runTestApp :: Connection -> AppM a -> IO (Either AppError a)
