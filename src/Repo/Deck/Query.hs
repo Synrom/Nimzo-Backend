@@ -80,7 +80,7 @@ searchInstant :: MonadDB m => Maybe String -> m [DeckSearchResult]
 searchInstant Nothing = return []
 searchInstant (Just s)
   | stripped == "" = return []
-  | otherwise = runQuery query (Only stripped)
+  | otherwise = runQuery query (stripped, stripped, stripped)
   where
     stripped = trim s
     query :: Query
@@ -97,14 +97,20 @@ searchInstant (Just s)
       \WHERE d.is_public = TRUE \
       \AND q.tsq IS NOT NULL \
       \AND d.search_vector_name @@ q.tsq \
-      \ORDER BY ts_rank(d.search_vector_name, q.tsq) DESC \
+      \ORDER BY \
+      \  CASE \
+      \    WHEN lower(d.name) = lower(?) THEN 0 \
+      \    WHEN lower(d.name) LIKE lower(?) || '%' THEN 1 \
+      \    ELSE 2 \
+      \  END, \
+      \  ts_rank(d.search_vector_name, q.tsq) DESC \
       \LIMIT 10"
 
 search :: MonadDB m => Maybe String -> m [DeckSearchResult]
 search Nothing = return []
 search (Just s)
   | stripped == "" = return []
-  | otherwise = runQuery query (Only stripped)
+  | otherwise = runQuery query (stripped, stripped, stripped)
   where
     stripped = trim s
     query :: Query
@@ -122,6 +128,11 @@ search (Just s)
       \AND q.tsq IS NOT NULL \
       \AND d.search_vector @@ q.tsq \
       \ORDER BY \
+      \  CASE \
+      \    WHEN lower(d.name) = lower(?) THEN 0 \
+      \    WHEN lower(d.name) LIKE lower(?) || '%' THEN 1 \
+      \    ELSE 2 \
+      \  END, \
       \  ts_rank(d.search_vector, q.tsq) DESC, \
       \  d.download_count DESC, \
       \  d.rating_avg DESC NULLS LAST"
