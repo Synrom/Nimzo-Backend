@@ -150,6 +150,10 @@ ensureTestSchema conn = do
     \ADD COLUMN IF NOT EXISTS search_vector_name tsvector \
     \GENERATED ALWAYS AS (to_tsvector('english', name)) STORED"
   _ <- execute_ conn "CREATE INDEX IF NOT EXISTS decks_search_vector_name_idx ON decks USING GIN (search_vector_name)"
+  -- The isolated test DB needs the same indexes, but execute_ sends the file
+  -- as one transaction, where CREATE INDEX CONCURRENTLY is not allowed.
+  searchMigration <- readFile "initdb/27_deck_search_relevance.sql"
+  _ <- execute_ conn (fromString $ T.unpack $ T.replace "CONCURRENTLY " "" $ T.pack searchMigration)
   _ <- execute_ conn
     "CREATE TABLE IF NOT EXISTS user_identities (\
     \ id SERIAL PRIMARY KEY,\

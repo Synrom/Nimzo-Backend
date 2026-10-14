@@ -76,66 +76,73 @@ insertOrUpdate deck =
       \RETURNING"
         <> returnFields
 
+-- Both endpoints share relevance tiers. Candidate retrieval uses GIN
+-- indexes; normalization and ranking happen only after candidate retrieval.
 searchInstant :: MonadDB m => Maybe String -> m [DeckSearchResult]
-searchInstant Nothing = return []
-searchInstant (Just s)
-  | stripped == "" = return []
-  | otherwise = runQuery query (stripped, stripped, stripped)
-  where
-    stripped = trim s
-    query :: Query
-    query =
-      "WITH q AS ( \
-      \  SELECT to_tsquery('english', array_to_string(array_agg(token || ':*'), ' & ')) AS tsq \
-      \  FROM regexp_split_to_table(lower(?), '[^[:alnum:]]+') AS t(token) \
-      \  WHERE token <> '' \
-      \) \
-      \SELECT" <> searchReturnFields <>
-      "FROM decks d \
-      \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id \
-      \CROSS JOIN q \
-      \WHERE d.is_public = TRUE \
-      \AND q.tsq IS NOT NULL \
-      \AND d.search_vector_name @@ q.tsq \
-      \ORDER BY \
-      \  CASE \
-      \    WHEN lower(d.name) = lower(?) THEN 0 \
-      \    WHEN lower(d.name) LIKE lower(?) || '%' THEN 1 \
-      \    ELSE 2 \
-      \  END, \
-      \  ts_rank(d.search_vector_name, q.tsq) DESC \
-      \LIMIT 10"
+searchInstant = searchDecks True
 
 search :: MonadDB m => Maybe String -> m [DeckSearchResult]
-search Nothing = return []
-search (Just s)
-  | stripped == "" = return []
-  | otherwise = runQuery query (stripped, stripped, stripped)
+search = searchDecks False
+
+searchDecks :: MonadDB m => Bool -> Maybe String -> m [DeckSearchResult]
+searchDecks _ Nothing = return []
+searchDecks instant (Just s)
+  | null stripped = return []
+  | otherwise = runQuery (deckSearchQuery instant) (Only stripped)
   where
     stripped = trim s
-    query :: Query
-    query =
-      "WITH q AS ( \
-      \  SELECT to_tsquery('english', array_to_string(array_agg(token || ':*'), ' & ')) AS tsq \
-      \  FROM regexp_split_to_table(lower(?), '[^[:alnum:]]+') AS t(token) \
-      \  WHERE token <> '' \
-      \) \
-      \SELECT" <> searchReturnFields <>
-      "FROM decks d \
-      \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id \
-      \CROSS JOIN q \
-      \WHERE d.is_public = TRUE \
-      \AND q.tsq IS NOT NULL \
-      \AND d.search_vector @@ q.tsq \
-      \ORDER BY \
-      \  CASE \
-      \    WHEN lower(d.name) = lower(?) THEN 0 \
-      \    WHEN lower(d.name) LIKE lower(?) || '%' THEN 1 \
-      \    ELSE 2 \
-      \  END, \
-      \  ts_rank(d.search_vector, q.tsq) DESC, \
-      \  d.download_count DESC, \
-      \  d.rating_avg DESC NULLS LAST"
+
+deckSearchQuery :: Bool -> Query
+deckSearchQuery instant =
+  -- A = literal title, B = English description, C = literal description.
+  -- Each word must match the title or description; English stopwords use C
+  -- instead of disappearing. These weights match deck_search_document.
+  "WITH input AS ( \
+  \  SELECT deck_search_normalize(?) AS term \
+  \), tokens AS MATERIALIZED ( \
+  \  SELECT token, ord, to_tsquery('english', token || ':*B') AS description_query \
+  \  FROM input, regexp_split_to_table(term, ' ') WITH ORDINALITY AS t(token, ord) \
+  \  WHERE token <> '' \
+  \), q AS MATERIALIZED ( \
+  \  SELECT input.term, \
+  \    to_tsquery('simple', string_agg(token || ':*', ' & ' ORDER BY ord)) AS title_query, \
+  \    string_agg('(' || to_tsquery('simple', token || ':*A')::text || ' | ' || \
+  \      CASE WHEN numnode(description_query) = 0 \
+  \        THEN to_tsquery('simple', token || ':*C') ELSE description_query END::text || ')', \
+  \      ' & ' ORDER BY ord)::tsquery AS document_query \
+  \  FROM input LEFT JOIN tokens ON TRUE GROUP BY input.term \
+  \), candidates AS MATERIALIZED ( \
+  \  SELECT d.id, deck_search_normalize(d.name) AS title FROM decks d CROSS JOIN q \
+  \  WHERE d.is_public = TRUE "
+  <> (if instant
+        then " AND to_tsvector('simple', deck_search_normalize(d.name)) @@ q.title_query "
+        else " AND deck_search_document(d.name, d.description) @@ q.document_query ")
+  <> ") SELECT" <> searchReturnFields <>
+  "FROM candidates c \
+  \JOIN decks d ON d.id = c.id \
+  \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id \
+  \CROSS JOIN q \
+  \CROSS JOIN LATERAL ( \
+  \  SELECT c.title, \
+  \    to_tsvector('simple', c.title) AS title_vector \
+  \) n \
+  \CROSS JOIN LATERAL ( \
+  \  SELECT CASE \
+  \    WHEN n.title = q.term THEN 0 \
+  \    WHEN left(n.title, length(q.term)) = q.term THEN 1 \
+  \    WHEN strpos(' ' || n.title || ' ', ' ' || q.term || ' ') > 0 THEN 2 \
+  \    WHEN n.title_vector @@ q.title_query THEN 3 \
+  \    ELSE 4 \
+  \  END AS tier \
+  \) relevance \
+  \ORDER BY relevance.tier, \
+  \  CASE \
+  \    WHEN relevance.tier < 3 THEN 0 \
+  \    WHEN relevance.tier = 3 THEN ts_rank_cd(n.title_vector, q.title_query, 2) \
+  \    ELSE ts_rank_cd(deck_search_document(d.name, d.description), q.document_query, 2) \
+  \  END DESC, \
+  \  d.download_count DESC, d.rating_avg DESC NULLS LAST, d.id ASC "
+  <> if instant then " LIMIT 10" else ""
 
 find :: MonadDB m => Integer -> m Deck
 find deckId = one =<< runQuery query (Only deckId)

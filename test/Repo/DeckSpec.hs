@@ -49,6 +49,17 @@ insertDeckWithCards conn username udvId deckName public movesList = do
 
   return inserted
 
+-- Use reverse relevance insertion order in fixtures so insertion order cannot
+-- accidentally satisfy the ordering assertions.
+seedSearchDecks :: Connection -> [(String, String, Bool)] -> IO ()
+seedSearchDecks conn fixtures = do
+  _ <- expectRight =<< runTestApp conn (Repo.User.insert (mkTestUser "searchauthor" "search@example.com" "password"))
+  forM_ (zip [1 :: Int ..] fixtures) $ \(idx, (title, description, public)) -> do
+    deck <- insertDeckWithCards conn "searchauthor" ("search_" ++ show idx) title public []
+    _ <- expectRight =<< runTestApp conn (execute "UPDATE decks SET description = ? WHERE id = ?"
+      (description, Models.Deck.deckId deck))
+    pure ()
+
 spec :: Spec
 spec = describe "Repo.Deck" $ do
 
@@ -312,6 +323,99 @@ spec = describe "Repo.Deck" $ do
                 ]
         sort (map (.name) fullFound) `shouldBe` expectedNames
         sort (map (.name) instantFound) `shouldBe` expectedNames
+
+  describe "search relevance" $ do
+    forM_ [("instant", Repo.Deck.searchInstant), ("full", Repo.Deck.search)] $ \(endpoint, searchDecks) ->
+      describe endpoint $ do
+        it "keeps From Gambit ahead of repeated gambit titles and excludes unrelated gambits" $
+          withCleanDb $ \conn -> do
+            seedSearchDecks conn
+              [ ("Englund Gambit: Felbecker Gambit", "", True)
+              , ("Englund Gambit: Felbecker Gambit", "Also covers the From Gambit", True)
+              , ("From Gambit", "", True)
+              ]
+            found <- expectRight =<< runTestApp conn (searchDecks (Just "From Gambit"))
+            map (.name) found `shouldBe`
+              (if endpoint == "instant" then ["From Gambit"]
+               else ["From Gambit", "Englund Gambit: Felbecker Gambit"])
+
+        it "orders exact, prefix, phrase, other title, then description matches" $
+          withCleanDb $ \conn -> do
+            seedSearchDecks conn
+              [ ("Bird repertoire", "From Gambit", True)
+              , ("From: a dangerous gambit", "", True)
+              , ("A repertoire against the From Gambit", "", True)
+              , ("From Gambit: Lasker Variation", "", True)
+              , ("From Gambit", "", True)
+              , ("From Gambit", "", False)
+              ]
+            -- Popularity and description repetition must never cross title tiers.
+            _ <- expectRight =<< runTestApp conn (execute
+              "UPDATE decks SET download_count = 100000, rating_avg = 5, description = repeat('From Gambit ', 30) WHERE name = ?"
+              (Only ("From: a dangerous gambit" :: String)))
+            found <- expectRight =<< runTestApp conn (searchDecks (Just "From Gambit"))
+            map (.name) found `shouldBe`
+              ([ "From Gambit", "From Gambit: Lasker Variation"
+               , "A repertoire against the From Gambit", "From: a dangerous gambit"
+               ] ++ if endpoint == "full" then ["Bird repertoire"] else [])
+
+        it "matches opening names that English treats as stopwords" $
+          withCleanDb $ \conn -> do
+            seedSearchDecks conn
+              [("Englund Gambit", "", True), ("From Gambit", "", True), ("Bird repertoire", "From", True)]
+            found <- expectRight =<< runTestApp conn (searchDecks (Just "From"))
+            map (.name) found `shouldBe`
+              (["From Gambit"] ++ if endpoint == "full" then ["Bird repertoire"] else [])
+
+        it "normalizes case, whitespace, punctuation and SQL wildcard characters consistently" $
+          withCleanDb $ \conn -> do
+            seedSearchDecks conn
+              [("From Gambit: Lasker", "", True), ("FROM--Gambit", "", True), ("From Other Gambit", "", True)]
+            forM_ ["  fRoM   gAmBiT  ", "From_Gambit", "From%Gambit", "From: Gambit"] $ \term -> do
+              found <- expectRight =<< runTestApp conn (searchDecks (Just term))
+              map (.name) found `shouldBe` ["FROM--Gambit", "From Gambit: Lasker", "From Other Gambit"]
+
+        it "retains prefix completion for every word" $
+          withCleanDb $ \conn -> do
+            seedSearchDecks conn [("From Gambit", "", True), ("French Defense", "", True)]
+            found <- expectRight =<< runTestApp conn (searchDecks (Just "Fro Gam"))
+            map (.name) found `shouldBe` ["From Gambit"]
+
+        it "returns no results for absent, blank, punctuation-only or unmatched queries" $
+          withCleanDb $ \conn -> do
+            seedSearchDecks conn [("From Gambit", "", True)]
+            forM_ [Nothing, Just "", Just " \t ", Just "_%:!()", Just "Sicilian"] $ \term -> do
+              found <- expectRight =<< runTestApp conn (searchDecks term)
+              length found `shouldBe` 0
+
+        it "uses downloads, rating and ID for stable ties and limits only instant search" $
+          withCleanDb $ \conn -> do
+            seedSearchDecks conn (replicate 12 ("From Gambit", "", True))
+            ids <- query conn "SELECT id FROM decks ORDER BY id" () :: IO [Only Integer]
+            let orderedIds = map fromOnly ids
+            _ <- expectRight =<< runTestApp conn (execute
+              "UPDATE decks SET download_count = 10 WHERE id = ?" (Only (last orderedIds)))
+            _ <- expectRight =<< runTestApp conn (execute
+              "UPDATE decks SET rating_avg = 4 WHERE id = ?" (Only (orderedIds !! 10)))
+            found <- expectRight =<< runTestApp conn (searchDecks (Just "From Gambit"))
+            let expected = [last orderedIds, orderedIds !! 10] ++ take 10 orderedIds
+            map (.deckId) found `shouldBe` (if endpoint == "instant" then take 10 expected else expected)
+
+    it "keeps English stemming and matches split across title and description in full search" $
+      withCleanDb $ \conn -> do
+        seedSearchDecks conn [("Bird repertoire", "Attacking with the From Gambit", True)]
+        found <- expectRight =<< runTestApp conn (Repo.Deck.search (Just "Bird attacks From"))
+        map (.name) found `shouldBe` ["Bird repertoire"]
+        instant <- expectRight =<< runTestApp conn (Repo.Deck.searchInstant (Just "Bird attacks From"))
+        length instant `shouldBe` 0
+
+    it "uses literal title words while stemming description words" $
+      withCleanDb $ \conn -> do
+        seedSearchDecks conn [("Attack repertoire", "", True), ("Bird repertoire", "Attacking chess", True)]
+        found <- expectRight =<< runTestApp conn (Repo.Deck.search (Just "attacks"))
+        map (.name) found `shouldBe` ["Bird repertoire"]
+        instant <- expectRight =<< runTestApp conn (Repo.Deck.searchInstant (Just "attacks"))
+        length instant `shouldBe` 0
 
   describe "saveRating" $ do
     it "upserts a user's rating and keeps one rating per user/deck" $ do

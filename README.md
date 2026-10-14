@@ -5,6 +5,22 @@ It also implements a Watermelon compatible endpoint.
 
 The whole backend is written in Haskell using Servant.
 
+## Deck search migration
+
+Before deploying the search relevance changes, apply
+`initdb/27_deck_search_relevance.sql` with `psql -v ON_ERROR_STOP=1 -f`
+against the application database in autocommit mode (no `--single-transaction`).
+It builds two public-deck GIN expression indexes concurrently, without rewriting
+the decks table. Fresh Docker databases apply it automatically.
+
+Both search endpoints rank normalized exact titles, title prefixes, whole
+phrases in titles, other title matches, then matches requiring descriptions.
+Normalization ignores case, punctuation and repeated whitespace. Prefix matching
+is retained for every query word. English stemming remains available in full
+search; words discarded by English must also match literally in the title or
+description. Downloads, rating and deck ID break relevance ties. Instant search
+returns at most ten title matches; full search includes description matches.
+
 ## Streak notification worker
 
 Apply `initdb/23_streak_live_activity_notifications.sql` and
