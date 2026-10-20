@@ -8,6 +8,8 @@ import Test.Hspec
 import qualified Repo.UserSpec
 import qualified Repo.DeckSpec
 import qualified Repo.OnboardingSpec
+import qualified Routes.OnboardingLimitsSpec
+import qualified Routes.OnboardingTelemetrySpec
 import qualified Routes.AndroidSpec
 import qualified Routes.AuthSpec
 import qualified Routes.DeckSpec
@@ -27,6 +29,8 @@ spec = do
     describe "Onboarding Repository" Repo.OnboardingSpec.spec
 
   describe "Route Tests" $ do
+    describe "Onboarding Request Limits" Routes.OnboardingLimitsSpec.spec
+    describe "Onboarding Telemetry" Routes.OnboardingTelemetrySpec.spec
     describe "Android Routes" Routes.AndroidSpec.spec
     describe "Auth Routes" Routes.AuthSpec.spec
     describe "Deck Routes" Routes.DeckSpec.spec

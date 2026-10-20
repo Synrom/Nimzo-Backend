@@ -20,6 +20,7 @@ import Network.Wai.Middleware.Cors
 import Data.ByteString.Char8 (pack)
 import Database.PostgreSQL.Simple (connectPostgreSQL)
 import App.API (api)
+import App.OnboardingLimits (newOnboardingLimits)
 import App.APNS (newAPNSClient)
 import App.Env (Env(..))
 import App.Server (mkServer)
@@ -96,6 +97,7 @@ main = do
         , apnsConfig = maybeAPNSConfig
         }
       ctx    = jwtCfg :. cookie :. EmptyContext
+  onboardingLimits <- newOnboardingLimits
   withStdoutLogger $ \logger -> do
     let settings = setPort 8080 $ setLogger logger defaultSettings -- TODO: make port configurable
     let policy =
@@ -106,5 +108,6 @@ main = do
     putStrLn "Running server on port 8080 ..."
     runSettings settings $
       logErrorResponses $
+      onboardingLimits $
       cors (const $ Just policy) $
       serveWithContext api ctx (mkServer env)

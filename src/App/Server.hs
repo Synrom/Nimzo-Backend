@@ -24,6 +24,7 @@ import qualified Routes.Auth as AuthRoutes
 import qualified Routes.Android as AndroidRoutes
 import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
+import qualified Routes.OnboardingTelemetry as OnboardingTelemetry
 import qualified Routes.Onboarding as Onboarding
 import qualified Routes.Experiment as Experiment
 import qualified Routes.StreakNotification as StreakNotification
@@ -38,7 +39,7 @@ secureServerT auth =
   :<|> StreakNotification.server auth
 
 serverT :: ServerT API AppM
-serverT = secureServerT :<|> Onboarding.publicServer :<|> Experiment.server :<|> AndroidRoutes.server :<|> AuthRoutes.server :<|> DeckRoutes.server
+serverT = secureServerT :<|> Onboarding.publicServer :<|> OnboardingTelemetry.server :<|> Experiment.server :<|> AndroidRoutes.server :<|> AuthRoutes.server :<|> DeckRoutes.server
 
 mkServer :: Env -> Servant.Server API
 mkServer env = hoistServerWithContext api (Proxy :: Proxy '[JWTSettings, CookieSettings]) (nt env) serverT

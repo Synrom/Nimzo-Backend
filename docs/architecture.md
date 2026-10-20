@@ -107,3 +107,28 @@ until read in full: `src/Repo/StreakNotification.hs`,
 `src/Models/User.hs`, `src/Repo/UserIdentity.hs`, `test/Routes/WatermelonSpec.hs`
 (only two `it` blocks read), `test/TestHelpers.hs`, and everything else under
 `src/App/`, `src/Models/`, `src/Repo/`, `src/Routes/` not named above.
+
+## Onboarding conversion telemetry (October 2026)
+
+- `src/Routes/OnboardingTelemetry.hs`: additive public batch event ingestion,
+  sticky validated configuration, authenticated RevenueCat webhooks, scalar
+  payload sanitization and server assignment reconciliation. Tables/views are
+  defined in `initdb/28_onboarding_telemetry.sql`.
+- `src/App/OnboardingLimits.hs`: telemetry-only WAI middleware with streamed
+  256 KiB request limits and bounded per-peer/per-route fixed-window rates.
+  `app/Main.hs` installs it before JSON decoding.
+- `initdb/29_onboarding_activation_experiment.sql`: idempotently registers
+  executable control/one-lesson variants with control 100 and treatment zero;
+  no experiment is launched automatically.
+- `src/Repo/Deck/Promotion.hs`: explicit neutral featured-source aggregation;
+  omitted source retains legacy TikTok behavior for existing clients.
+- `docs/reports/onboarding_cohorts.sql`: checkout failure/missing-callback
+  investigation, mature activation/retention and D35/D60 gross currency reports.
+- `test/Routes/OnboardingTelemetrySpec.hs` and `OnboardingLimitsSpec.hs`: public
+  contract, validation, retries, webhook auth, privacy, sandbox reconciliation,
+  terminal outcomes, assignment mismatch and HTTP body/rate guard tests.
+- `scripts/seed_onboarding_qa.sql`: opt-in fictional public opening for local
+  Android Maestro testing. Never run this fixture as a production migration.
+
+See `docs/onboarding-telemetry.md` for deployment order, required webhook secret,
+configuration constraints, rollback policy and reporting limitations.

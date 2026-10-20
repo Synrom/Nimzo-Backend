@@ -60,6 +60,7 @@ import qualified Routes.Auth as AuthRoutes
 import qualified Routes.Android as AndroidRoutes
 import qualified Routes.Watermelon as Watermelon
 import qualified Routes.User as User
+import qualified Routes.OnboardingTelemetry as OnboardingTelemetry
 import qualified Routes.Onboarding as Onboarding
 import qualified Routes.Experiment as Experiment
 import qualified Routes.StreakNotification as StreakNotification
@@ -74,6 +75,7 @@ type SecureAPI =
 type API =
   Auth '[JWT] AuthenticatedUser :> SecureAPI
     :<|> Onboarding.PublicAPI
+    :<|> OnboardingTelemetry.API
     :<|> Experiment.API
     :<|> AndroidRoutes.API
     :<|> AuthRoutes.API

@@ -76,6 +76,7 @@ cleanTestDb conn = do
 
 ensureTestSchema :: Connection -> IO ()
 ensureTestSchema conn = do
+  applySqlFile conn "initdb/28_onboarding_telemetry.sql"
   applySqlFile conn "initdb/23_streak_live_activity_notifications.sql"
   applySqlFile conn "initdb/24_locally_scheduled_live_activities.sql"
   _ <- execute_ conn
@@ -120,7 +121,10 @@ ensureTestSchema conn = do
   _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ADD COLUMN IF NOT EXISTS heard_about_us VARCHAR(50)"
   _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ADD COLUMN IF NOT EXISTS platform VARCHAR(50)"
   _ <- execute_ conn "ALTER TABLE anonymous_onboarding_progress ALTER COLUMN last_step TYPE VARCHAR(500)"
+  applySqlFile conn "initdb/04_onboarding_preferences.sql"
+  applySqlFile conn "initdb/05_anonymous_onboarding_progress.sql"
   applySqlFile conn "initdb/16_experiments.sql"
+  applySqlFile conn "initdb/29_onboarding_activation_experiment.sql"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS color VARCHAR(2)"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS new_cards_today INTEGER NOT NULL DEFAULT 0"
   _ <- execute_ conn "ALTER TABLE user_deck_views ADD COLUMN IF NOT EXISTS last_study_date VARCHAR(10) NOT NULL DEFAULT ''"

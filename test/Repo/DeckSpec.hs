@@ -635,7 +635,7 @@ spec = describe "Repo.Deck" $ do
         result `shouldSatisfy` isLeft'
 
   describe "listFeatured" $ do
-    it "returns only featured decks ordered by newest created_at first and applies limit" $ do
+    it "returns featured decks ordered by configured rank and supports neutral selection" $ do
       withCleanDb $ \conn -> do
         let author = mkTestUser "featureduser" "featureduser@example.com" "password"
         _ <- runTestApp conn $ Repo.User.insert author
@@ -663,8 +663,13 @@ spec = describe "Repo.Deck" $ do
         _ <- runTestApp conn $ execute "UPDATE decks SET created_at = ? WHERE id = ?" ("2026-03-01 00:00:00+00" :: String, Models.Deck.deckId deckC)
 
         featured <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "tiktok") (Just 2))
-        map (.name) featured `shouldBe` ["Featured C", "Featured B"]
-        map (.featuredCardMoves) featured `shouldBe` [Nothing, Just "e4 e5"]
+        map (.name) featured `shouldBe` ["Featured B", "Featured A"]
+        map (.featuredCardMoves) featured `shouldBe` [Just "e4 e5", Nothing]
+        _ <- runTestApp conn $ execute "UPDATE decks SET featured_source = 'instagram' WHERE id = ?" (Only $ Models.Deck.deckId deckC)
+        neutral <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured (Just "neutral") (Just 20))
+        length neutral `shouldBe` 3
+        legacy <- expectRight =<< runTestApp conn (Repo.Deck.listFeatured Nothing (Just 20))
+        length legacy `shouldBe` 2
 
   describe "find" $ do
     it "finds deck by ID" $ do
