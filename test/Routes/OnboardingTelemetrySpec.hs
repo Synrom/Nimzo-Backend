@@ -107,3 +107,26 @@ spec = describe "OnboardingTelemetry" $ do
   _ <- runTestApp conn (ingestEvents $ object ["events" .= [latePending]]) >>= expectRight
   outcomes <- query_ conn "SELECT client_outcome FROM onboarding_checkout_attempts WHERE attempt_id='attempt-one'" :: IO [Only String]
   outcomes `shouldBe` [Only "purchase_client_confirmed"]
+ it "accepts minimized discovery results but rejects raw usernames and games" $ do
+  let props = object ["attempt_id" .= ("a"::String), "chess_platform" .= ("lichess"::String), "game_count" .= (25000::Int), "period_start" .= ("2026-08-23T13:00:00Z"::String), "period_end" .= ("2026-10-23T13:00:00Z"::String), "completeness" .= ("complete_public_period"::String), "loss_count" .= (12::Int), "player_color" .= ("b"::String), "opening_name" .= ("King's Gambit"::String)]
+  parseEither validateEvent (replace "properties" props sample) `shouldSatisfy` isRight
+  parseEither validateEvent (replace "properties" (object ["username" .= ("Synrom"::String)]) sample) `shouldSatisfy` isLeft
+  parseEither validateEvent (replace "properties" (object ["pgn" .= ("1. e4 e5"::String)]) sample) `shouldSatisfy` isLeft
+ it "reports missing accounts separately from service failures and later export failures" $ withCleanDb $ \conn -> do
+  _ <- execute_ conn "DELETE FROM onboarding_events"
+  applySqlFile conn "initdb/30_opening_discovery_reporting.sql"
+  let ev eid aid name outcome = replace "event_id" (String eid) $ replace "event_name" (String name) $ replace "properties" (object ["attempt_id" .= (aid :: String), "chess_platform" .= ("lichess"::String), "outcome" .= (outcome :: String)]) sample
+      events = [ev "start-a" ("a"::String) "opening_account_attempt" ("started"::String), ev "missing-a" "a" "opening_account_result" "missing", ev "start-b" "b" "opening_account_attempt" "started", ev "error-b" "b" "opening_account_result" "rate_limit", ev "start-c" "c" "opening_account_attempt" "started", ev "exists-c" "c" "opening_account_result" "existent", ev "failed-c" "c" "opening_analysis_failed" "timeout"]
+  _ <- runTestApp conn (ingestEvents $ object ["events" .= events]) >>= expectRight
+  _ <- runTestApp conn (ingestEvents $ object ["events" .= events]) >>= expectRight
+  rows <- query_ conn "SELECT attempts,existent_attempts,nonexistent_attempts,validation_errors,failed_analyses FROM onboarding_opening_attempt_counts WHERE environment='sandbox'" :: IO [(Int,Int,Int,Int,Int)]
+  rows `shouldBe` [(3,1,1,1,1)]
+
+ it "reports profile confirmation and edit without storing public identity or ratings" $ withCleanDb $ \conn -> do
+  _ <- execute_ conn "DELETE FROM onboarding_events"
+  applySqlFile conn "initdb/30_opening_discovery_reporting.sql"
+  let ev name = replace "event_id" (String name) $ replace "event_name" (String name) $ replace "properties" (object ["attempt_id" .= ("profile-a"::String), "chess_platform" .= ("chess_com"::String)]) sample
+  _ <- runTestApp conn (ingestEvents $ object ["events" .= map ev ["opening_profile_viewed","opening_profile_edited","opening_profile_confirmed"]]) >>= expectRight
+  rows <- query_ conn "SELECT profiles_viewed,profiles_confirmed,profiles_edited FROM onboarding_opening_attempt_counts WHERE environment='sandbox'" :: IO [(Int,Int,Int)]
+  rows `shouldBe` [(1,1,1)]
+  parseEither validateEvent (replace "properties" (object ["rating" .= (1500::Int)]) sample) `shouldSatisfy` isLeft

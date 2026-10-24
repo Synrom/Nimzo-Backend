@@ -56,3 +56,10 @@ Apply `initdb/28_onboarding_telemetry.sql` then
 `initdb/29_onboarding_activation_experiment.sql` before releasing new clients. See
 [configuration, RevenueCat webhooks and checkout reporting](docs/onboarding-telemetry.md)
 for the endpoint contract, rollout/rollback and local verification.
+
+## Opening discovery onboarding
+
+Apply `initdb/30_opening_discovery_reporting.sql` after 28/29 and deploy the
+telemetry property allowlist before the new client. See
+[opening discovery](docs/opening-discovery.md) for event semantics, counts,
+privacy, classification limits and the illustrative rating calculation.

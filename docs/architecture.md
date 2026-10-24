@@ -132,3 +132,12 @@ until read in full: `src/Repo/StreakNotification.hs`,
 
 See `docs/onboarding-telemetry.md` for deployment order, required webhook secret,
 configuration constraints, rollback policy and reporting limitations.
+
+## Opening discovery reporting
+
+`Routes.OnboardingTelemetry` accepts minimized scalar discovery summaries via
+its existing event ingestion and deduplication contract. Migration
+`30_opening_discovery_reporting.sql` adds per-attempt and aggregate reporting
+views separating account existence, missing accounts, upstream failures and
+cancellation. Public API retrieval and opening math run on the mobile client;
+see `docs/opening-discovery.md` for data semantics, privacy and calculation.

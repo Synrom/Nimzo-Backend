@@ -35,7 +35,10 @@ server = ingestEvents :<|> getConfig :<|> revenueCat
 -- No freeform text, emails, chess positions, receipt data or credentials.
 propertyKeys :: [K.Key]
 propertyKeys = map K.fromString
-  [ "account_id", "activation_path", "assigned_variant", "assignment", "assignment_source"
+  [ "period_start", "period_end", "completeness"
+  , "question", "chess_platform", "game_count", "classified_count", "score", "scenario_gain"
+  , "opening_name", "eco", "player_color", "loss_count", "selected", "recommended", "recommendation_status"
+  , "account_id", "activation_path", "assigned_variant", "assignment", "assignment_source"
   , "assisted", "attempt", "attempt_count", "attempt_id", "available_packages"
   , "billing_period", "campaign", "campaign_deck_id", "campaign_id", "card_id"
   , "completed", "config_source", "count", "currency", "deck_id"
