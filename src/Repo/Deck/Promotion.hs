@@ -22,7 +22,6 @@ import Repo.Classes
 import qualified Repo.Deck.Query as DeckQuery
 import Repo.Deck.Validation
   ( normalizeFeaturedLimit,
-    normalizeFeaturedSource,
     normalizeNullableString,
     normalizeUsername,
     resolveFeaturedSource,
@@ -34,17 +33,16 @@ import Repo.Utils (ensure)
 
 listFeatured :: MonadDB m => Maybe String -> Maybe Integer -> m [DeckSearchResult]
 listFeatured maybeSource maybeLimit = do
-  let neutral = normalizeFeaturedSource maybeSource == Just "neutral"
-  source <- fromEither $ resolveFeaturedSource (if neutral then Nothing else maybeSource)
+  source <- fromEither $ resolveFeaturedSource maybeSource
   let finalLimit = normalizeFeaturedLimit maybeLimit
-  runQuery query (neutral, featuredSourceToString source, finalLimit)
+  runQuery query (featuredSourceToString source, finalLimit)
   where
     query =
       "SELECT" <> DeckQuery.searchReturnFields <>
       "FROM decks d \
       \LEFT JOIN user_card_views fc ON fc.id = d.featured_card_id \
       \WHERE d.is_public = TRUE \
-      \AND d.featured_source IS NOT NULL AND (? OR d.featured_source = ?) \
+      \AND d.featured_source = ? \
       \ORDER BY COALESCE(d.featured_rank, 2147483647) ASC, d.created_at DESC, d.download_count DESC, d.rating_avg DESC NULLS LAST, d.name ASC \
       \LIMIT ?"
 

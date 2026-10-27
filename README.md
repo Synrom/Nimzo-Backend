@@ -50,9 +50,8 @@ The command exits non-zero and prints each uncovered source location, making
 it suitable for CI. Pass `--skip-tests` to inspect the newest existing HPC
 report without rerunning the suite.
 
-## Onboarding conversion telemetry
+## RevenueCat webhook
 
-Apply `initdb/28_onboarding_telemetry.sql` then
-`initdb/29_onboarding_activation_experiment.sql` before releasing new clients. See
-[configuration, RevenueCat webhooks and checkout reporting](docs/onboarding-telemetry.md)
-for the endpoint contract, rollout/rollback and local verification.
+Apply `initdb/28_onboarding_telemetry.sql` before releasing new clients. It backs
+the secret-authenticated `/onboarding/revenuecat` webhook, which ingests
+sanitized RevenueCat billing events.

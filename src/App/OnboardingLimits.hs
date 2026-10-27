@@ -40,8 +40,6 @@ newOnboardingLimits = do
                     x:rest -> (rest,x)
               app request {requestBody=readCached} respond
   where
-    policy "/onboarding/events" = Just 120
-    policy "/onboarding/config" = Just 60
     policy "/onboarding/revenuecat" = Just 600
     policy _ = Nothing
     peer (SockAddrInet _ address) = show address
